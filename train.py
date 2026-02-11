@@ -692,7 +692,7 @@ def main() -> None: # Added type hint for clarity
     # === [新增] 記錄總開始時間 ===
     total_start_time = time.time()
 
-    for epoch in tqdm(range(1, args.num_epochs + 1), desc="Total Progress"):
+    for epoch in tqdm(range(1, args.num_epochs + 1), desc="Total Progress", ncols=100, leave=False):
         # === [新增] 記錄每個 Epoch 開始時間 ===
         epoch_start_time = time.time()
 

@@ -692,7 +692,10 @@ def main() -> None: # Added type hint for clarity
     # === [新增] 記錄總開始時間 ===
     total_start_time = time.time()
 
-    for epoch in range(1, args.num_epochs + 1):
+    for epoch in tqdm(range(1, args.num_epochs + 1), desc="Total Progress"):
+        # === [新增] 記錄每個 Epoch 開始時間 ===
+        epoch_start_time = time.time()
+
         net.train()
 
         # --- START OF COPIED/ADAPTED TRAINING EPOCH LOGIC ---
@@ -894,6 +897,19 @@ def main() -> None: # Added type hint for clarity
         logging.info(f"Epoch {epoch} Validation [SYS TEXTUAL]: MSE={val_results['sys_mse_t']:.4f}, LCC={val_results['sys_lcc_t']:.4f}, SRCC={val_results['sys_srcc_t']:.4f}, KTAU={val_results['sys_ktau_t']:.4f}")
         for key, value in val_results.items(): # Log all validation metrics to TensorBoard
             writer.add_scalar(f'Validation/{key.replace("_o", "_overall").replace("_t", "_textual")}', value, epoch)
+
+        # === [新增 3] 在 Epoch 結束處計算時間 ===
+        epoch_duration = time.time() - epoch_start_time
+        
+        # 預估剩餘時間 (Remaining Time Estimation)
+        epochs_left = args.num_epochs - epoch
+        estimated_time_left = epoch_duration * epochs_left
+        
+        # 格式化時間字串 (例如 "01:05:20")
+        str_duration = str(datetime.timedelta(seconds=int(epoch_duration)))
+        str_eta = str(datetime.timedelta(seconds=int(estimated_time_left)))
+
+        logging.info(f"Epoch {epoch} Time: {str_duration} | Estimated Time Left: {str_eta}")
 
         # Checkpointing & Early Stopping (based on THIS validation set)
         improved = False

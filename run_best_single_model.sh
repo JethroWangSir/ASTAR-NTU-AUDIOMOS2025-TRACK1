@@ -1,7 +1,7 @@
 #!/bin/bash
 
 python train.py \
-    --expname primary_model_gaussian \
+    --expname primary_model_gaussian_pairwise_ranking_loss \
     --model_type muq_roberta_transformer_dist \
     --datadir /share/nas169/jethrowang/MusicEval-full \
     --train_list_path /share/nas169/jethrowang/MusicEval-full/sets/train_mos_list.txt \
@@ -11,4 +11,7 @@ python train.py \
     --lr 5e-5 \
     --optimizer adamw \
     --dist_prediction_score_style gaussian \
-    --num_bins 20
+    --num_bins 20 \
+    --use_ranking_loss \
+    --rank_lambda 0.2 \
+    --rank_margin 0.0

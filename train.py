@@ -21,7 +21,7 @@ import random
 from muq import MuQ
 # from torch.utils.data.dataset import Dataset # Not directly used if using custom datasets
 from torch.utils.data import DataLoader
-from utils import get_texts_from_filename, compute_metrics, systemID
+from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss
 from dataset_mos import MosDataset, PersonMosDataset
 from augment import mixup_data, scores_to_one_hot, scores_to_gaussian_target
 
@@ -354,6 +354,9 @@ def main() -> None: # Added type hint for clarity
     parser.add_argument('--predict_output_filename_base', type=str, default='answer', 
                         help='Base name for the output prediction file if --predict_only_ckpt_path is used (e.g., answer_MODEL).')
     parser.add_argument('--seed', type=int, default=1984, help='Random seed for reproducibility')
+    parser.add_argument('--use_ranking_loss', action='store_true', help='Enable Pairwise Ranking Loss to improve SRCC.')
+    parser.add_argument('--rank_lambda', type=float, default=0.2, help='Weight for ranking loss (default: 0.2).')
+    parser.add_argument('--rank_margin', type=float, default=0.0, help='Margin for ranking loss (default: 0.0).')
 
     args = parser.parse_args()
 
@@ -788,6 +791,29 @@ def main() -> None: # Added type hint for clarity
                                 target1_dist, target2_dist = scores_to_gaussian_target(labels1, args.num_bins, device), scores_to_gaussian_target(labels2, args.num_bins, device)
                         
                         loss1_train = criterion(torch.log(overall_dist_pred + 1e-10), target1_dist); loss2_train = criterion(torch.log(coherence_dist_pred + 1e-10), target2_dist)
+                        
+                        # === [新增] 判斷是否開啟 Ranking Loss ===
+                        if args.use_ranking_loss:
+                            # 計算 Overall Score 的排序損失
+                            # 注意：這裡傳入的是 model 預測出的純量分數 (overall_score)
+                            rank_loss_overall = args.rank_lambda * compute_pairwise_ranking_loss(
+                                overall_score, 
+                                labels1, 
+                                margin=args.rank_margin, 
+                                device=device
+                            )
+                            
+                            # 計算 Coherence Score 的排序損失
+                            rank_loss_coherence = args.rank_lambda * compute_pairwise_ranking_loss(
+                                coherence_score, 
+                                labels2, 
+                                margin=args.rank_margin, 
+                                device=device
+                            )
+
+                            loss1_train += rank_loss_overall
+                            loss2_train += rank_loss_coherence
+                            
             else:
                 output1, output2 = net(input_to_model, texts)
                 all_train_labels1.extend(labels1.cpu().numpy().flatten()) # labels1 already tensor

@@ -5,6 +5,8 @@ import scipy
 from scipy import stats
 import random
 import json
+import torch
+import torch.nn.functional as F
 
 SPECIAL_S_IDS = {"S001", "S006", "S013", "S017", "S018", "S033"}    # DEMO system use special prompts list
 
@@ -74,4 +76,55 @@ def systemID(wavID):
         # print(f"Error parsing system ID from {wavID}: {e}") # for debugging
         return "unknown_system" # return a placeholder
 
+def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, device='cuda'):
+    """
+    計算一個 Batch 內所有樣本兩兩配對的 Ranking Loss。
+    
+    Args:
+        pred_scores (Tensor): 模型預測的純量分數 (B, 1) 或 (B,)
+        true_scores (Tensor): 真實的 MOS 分數 (B, 1) 或 (B,)
+        margin (float): MarginRankingLoss 的邊界值 (預設 0.0 或 0.1)
+        device (str): 運算設備
+        
+    Returns:
+        loss (Tensor): 計算出的 scalar loss
+    """
+    # 1. 確保形狀為一維向量 (Batch_Size,)
+    pred = pred_scores.view(-1)
+    true = true_scores.view(-1)
+    batch_size = pred.size(0)
 
+    # 2. 建立 Pairwise 比較矩陣
+    # diff_true[i, j] = true[i] - true[j]
+    # 利用廣播機制: (B, 1) - (1, B) -> (B, B)
+    diff_true = true.unsqueeze(1) - true.unsqueeze(0)
+
+    # 3. 產生目標標籤 (Targets)
+    # 1: i > j (i 比較好)
+    # -1: i < j (j 比較好)
+    # 0: i == j (分數相同)
+    targets = torch.sign(diff_true)
+
+    # 4. 建立遮罩 (Mask)
+    # 我們只關心分數「不同」的配對，忽略分數相同的 (targets=0) 以及自己比自己
+    mask = (targets != 0)
+
+    # 如果這個 Batch 裡大家分數都一樣 (極端情況)，直接回傳 0
+    if mask.sum() == 0:
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    # 5. 準備輸入給 MarginRankingLoss 的資料
+    # 擴展預測值成 (B, B) 矩陣，以便與 targets 對應
+    pred_i = pred.unsqueeze(1).expand(batch_size, batch_size)
+    pred_j = pred.unsqueeze(0).expand(batch_size, batch_size)
+
+    # 6. 利用 Mask 篩選出有效的配對 (Flatten)
+    p_i_flat = pred_i[mask]
+    p_j_flat = pred_j[mask]
+    t_flat = targets[mask]
+
+    # 7. 計算損失
+    # Loss = max(0, -target * (input1 - input2) + margin)
+    loss = F.margin_ranking_loss(p_i_flat, p_j_flat, t_flat, margin=margin, reduction='mean')
+    
+    return loss

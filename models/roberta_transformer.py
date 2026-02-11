@@ -195,8 +195,11 @@ class MuQRoBERTaTransformerDistributionPredictor_with_SGCI(BaseTransformerPredic
             nn.Softmax(dim=1)
         )
  
-        # Coherence (from pooled cross-attended features)
-        self.coherence_input_dim = self.common_embed_dim # From fused_attentive_pool output
+        # Coherence (from pooled SGCI features)
+        # [修改點] SGCI 輸出的 fused_features 維度是 1024 (跟 Audio 一樣)，不是 768
+        self.coherence_input_dim = self.muq_output_dim  # <--- 改成這個 (1024)
+        # 原本是: self.common_embed_dim (768) -> 會報錯 Dimension Mismatch
+
         self.coherence_mlp = nn.Sequential(
             nn.Linear(self.coherence_input_dim, self.coherence_input_dim // 2),
             nn.ReLU(),

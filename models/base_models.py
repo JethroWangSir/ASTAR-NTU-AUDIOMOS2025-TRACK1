@@ -357,7 +357,7 @@ class BaseTransformerPredictor_with_SGCI(BasePredictor):
 
         # 核心融合：Text 指導 Audio 通道權重
         # 輸出維度維持與 Audio 相同 (B, T_a, 1024)
-        fused_seq = self.fusion_module(audio_input, text_seq_embed, text_mask=text_padding_mask)
+        fused_seq = self.fusion_module(audio_input_for_fusion, text_seq_embed, text_mask=text_padding_mask)
 
         # Pooling for TA branch
         fused_features = self.fused_attentive_pool(

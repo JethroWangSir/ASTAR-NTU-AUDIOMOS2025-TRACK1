@@ -1,4 +1,4 @@
-# [Repository in progress.] ASTAR-NTU Solution to AudioMOS Challenge 2025 Track 1
+# [Repository completed.] ASTAR-NTU Solution to AudioMOS Challenge 2025 Track 1
 
 This repository contains the official implementation of the ASTAR-NTU solution for Track 1 AudioMOS Challenge 2025.
 

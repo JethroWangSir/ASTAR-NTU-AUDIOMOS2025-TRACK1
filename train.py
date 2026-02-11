@@ -375,7 +375,7 @@ def main() -> None: # Added type hint for clarity
     DATA_DIR = args.datadir
     MODEL_TYPE = args.model_type
     EXP_NAME = args.expname
-    CKPT_DIR = os.path.join('./track1_ckpt', EXP_NAME) # Using ../track1_ckpt consistent with previous suggestions
+    CKPT_DIR = os.path.join('/share/nas169/jethrowang/DORA-MOS/exp', EXP_NAME) # Using ../track1_ckpt consistent with previous suggestions
     
     target_sr = 16000 if args.model_type == "clap" else 24000
     max_audio_seconds = 30 

@@ -38,6 +38,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 import torch.nn.functional as F
 import gc
+import time
+import datetime
 
 # Define your model's hyperparameters (must match your trained model)
 model_hyperparams = {
@@ -686,6 +688,10 @@ def main() -> None: # Added type hint for clarity
     
 
     logging.info("Starting training loop...")
+
+    # === [新增] 記錄總開始時間 ===
+    total_start_time = time.time()
+
     for epoch in range(1, args.num_epochs + 1):
         net.train()
 
@@ -920,6 +926,11 @@ def main() -> None: # Added type hint for clarity
         gc.collect()    # 強制回收 Python 物件
         torch.cuda.empty_cache() # 清理 PyTorch 緩存
     # --- End of Training Loop ---
+
+    # === [新增] 訓練結束後顯示總時間 ===
+    total_duration = time.time() - total_start_time
+    str_total = str(datetime.timedelta(seconds=int(total_duration)))
+    logging.info(f"Total Training Time: {str_total}")
 
     writer.close()
     logging.info("Finished Training Phase.")

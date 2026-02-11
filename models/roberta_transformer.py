@@ -8,7 +8,7 @@ import ipdb as pdb
 from mamba_ssm import Mamba
 from augment import OrdinalPredictorHeadMonotonic
 # from models.uncertainty_components import BetaParameterHead
-from models.base_models import PositionalEncoding, AttentivePooling, BaseTransformerPredictor
+from models.base_models import PositionalEncoding, AttentivePooling, BaseTransformerPredictor, BaseTransformerPredictor_with_SGCI
 
 
 class MuQMulanRoBERTaTransformerDistributionPredictor(BasePredictor):
@@ -127,6 +127,55 @@ class MuQRoBERTaTransformerScalarPredictor(nn.Module): # Or BasePredictor
 
 
 class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
+    def __init__(self, muq_model, roberta_model, num_bins=20,
+                 audio_transformer_layers=1, audio_transformer_heads=4, audio_transformer_dim=1024,
+                 text_transformer_layers=1, text_transformer_heads=4, text_transformer_dim=768, # For text if not using RoBERTa directly
+                common_embed_dim=768, cross_attention_heads=4, dropout_rate=0.3):
+        super().__init__(muq_model, roberta_model)
+        
+
+        # --- Prediction Heads ---
+        # Overall quality (from pooled audio)
+        self.overall_mlp = nn.Sequential(
+            nn.Linear(self.muq_output_dim, 512), # Input from attentive_pool_audio
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, num_bins),
+            nn.Softmax(dim=1)
+        )
+ 
+        # Coherence (from pooled cross-attended features)
+        self.coherence_input_dim = self.common_embed_dim # From fused_attentive_pool output
+        self.coherence_mlp = nn.Sequential(
+            nn.Linear(self.coherence_input_dim, self.coherence_input_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(self.coherence_input_dim // 2, self.coherence_input_dim // 4),
+            nn.ReLU(),
+            nn.Linear(self.coherence_input_dim // 4, num_bins),
+            nn.Softmax(dim=1)
+        )
+
+        self.register_buffer('bin_centers', torch.linspace(1, 5, num_bins))
+    
+
+    def forward(self, wavs, texts):
+        pooled_audio_features, fused_features = self.forward_features(
+            wavs, texts, use_decoupled_audio_for_cross_attn=False
+        )
+        overall_dist = self.overall_mlp(pooled_audio_features)
+        overall_expected = torch.sum(overall_dist * self.bin_centers, dim=1, keepdim=True)
+        # --- Coherence Prediction ---
+        coherence_dist = self.coherence_mlp(fused_features)
+        coherence_expected = torch.sum(coherence_dist * self.bin_centers, dim=1, keepdim=True)
+
+        return overall_dist, coherence_dist, overall_expected, coherence_expected
+
+
+
+class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor_with_SGCI):
     def __init__(self, muq_model, roberta_model, num_bins=20,
                  audio_transformer_layers=1, audio_transformer_heads=4, audio_transformer_dim=1024,
                  text_transformer_layers=1, text_transformer_heads=4, text_transformer_dim=768, # For text if not using RoBERTa directly

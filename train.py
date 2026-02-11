@@ -790,9 +790,9 @@ def main() -> None: # Added type hint for clarity
                             elif args.dist_prediction_score_style == 'gaussian':
                                 target1_dist, target2_dist = scores_to_gaussian_target(labels1, args.num_bins, device), scores_to_gaussian_target(labels2, args.num_bins, device)
                         
-                        loss1_train = criterion(torch.log(overall_dist_pred + 1e-10), target1_dist); loss2_train = criterion(torch.log(coherence_dist_pred + 1e-10), target2_dist)
+                        kl_div_loss_overall = criterion(torch.log(overall_dist_pred + 1e-10), target1_dist); kl_div_loss_coherence = criterion(torch.log(coherence_dist_pred + 1e-10), target2_dist)
                         
-                        # === [新增] 判斷是否開啟 Ranking Loss ===
+                        # === [新增] 判斷是否使用 Ranking Loss ===
                         if args.use_ranking_loss:
                             # 計算 Overall Score 的排序損失
                             # 注意：這裡傳入的是 model 預測出的純量分數 (overall_score)
@@ -811,9 +811,14 @@ def main() -> None: # Added type hint for clarity
                                 device=device
                             )
 
-                            loss1_train += rank_loss_overall
-                            loss2_train += rank_loss_coherence
-                            
+                            kl_div_loss = kl_div_loss_overall + kl_div_loss_coherence
+                            ranking_loss = rank_loss_overall + rank_loss_coherence
+                            loss1_train = kl_div_loss_overall + rank_loss_overall
+                            loss2_train = kl_div_loss_coherence + rank_loss_coherence
+                        else:
+                            loss1_train = kl_div_loss_overall
+                            loss2_train = kl_div_loss_coherence
+
             else:
                 output1, output2 = net(input_to_model, texts)
                 all_train_labels1.extend(labels1.cpu().numpy().flatten()) # labels1 already tensor
@@ -837,10 +842,24 @@ def main() -> None: # Added type hint for clarity
             optimizer.step()
             train_epoch_loss += train_loss_iter.item() * current_batch_size
             pbar_train.set_postfix(loss=train_loss_iter.item())
+
+            # === [新增] 記錄 1 個 epoch 的 total KL Divergence Loss 和 Ranking Loss ===
+            if args.use_ranking_loss:
+                kl_div_loss_iter = kl_div_loss
+                ranking_loss_iter = ranking_loss
+                kl_div_epoch_loss += kl_div_loss_iter.item() * current_batch_size
+                ranking_epoch_loss += ranking_loss_iter.item() * current_batch_size
         
         avg_train_loss = train_epoch_loss / train_total_samples if train_total_samples > 0 else 0
         train_mse1_ep, _, train_srcc1_ep, _ = compute_metrics(np.array(all_train_labels1), np.array(all_train_preds1))
         logging.info(f"Epoch {epoch} Train: Loss={avg_train_loss:.4f}, MSE_O={train_mse1_ep:.4f}, SRCC_O={train_srcc1_ep:.4f}")
+
+        # === [新增] 記錄 1 個 epoch 的 average KL Divergence Loss 和 Ranking Loss ===
+        if args.use_ranking_loss:
+            avg_kl_div_loss = kl_div_epoch_loss / train_total_samples if train_total_samples > 0 else 0
+            avg_ranking_loss = ranking_epoch_loss / train_total_samples if train_total_samples > 0 else 0
+            logging.info(f"Epoch {epoch} KL Divergence Loss={avg_train_loss:.4f}, Ranking Loss={avg_ranking_loss:.4f}")
+
         writer.add_scalar('Train/Loss_epoch', avg_train_loss, epoch)
         writer.add_scalar('Train/MSE_overall_epoch', train_mse1_ep, epoch)
         writer.add_scalar('Train/SRCC_overall_epoch', train_srcc1_ep, epoch)

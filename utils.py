@@ -76,6 +76,7 @@ def systemID(wavID):
         # print(f"Error parsing system ID from {wavID}: {e}") # for debugging
         return "unknown_system" # return a placeholder
 
+# === [新增] 計算一個 Batch 內所有樣本兩兩配對的 Ranking Loss ===
 def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, device='cuda'):
     """
     計算一個 Batch 內所有樣本兩兩配對的 Ranking Loss。

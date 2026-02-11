@@ -1,0 +1,19 @@
+2026-02-11 14:31:39,885 - INFO - Running script: train.py
+2026-02-11 14:31:39,886 - INFO - Script arguments: Namespace(datadir='/share/nas169/jethrowang/MusicEval-full', expname='primary_model_gaussian_pairwise_ranking_loss', ablation_model=False, audio_encoder_type='transformer', pooling_type='attention', train_list_path='/share/nas169/jethrowang/MusicEval-full/sets/train_mos_list.txt', validation_list_path='/share/nas169/jethrowang/MusicEval-full/sets/dev_mos_list.txt', test_list_path='/share/nas169/jethrowang/MusicEval-full/sets/test_mos_list.txt', model_type='muq_roberta_transformer_dist', num_ranks=5, batch_size=32, valid_batch_size=16, num_bins=20, lr=5e-05, loss1_type='l1', mixup_alpha=0.0, mixup_type='none', num_epochs=100, patience=15, optimizer='adamw', dist_prediction_score_style='gaussian', predict_only_ckpt_path=None, predict_output_filename_base='answer', seed=1984, use_ranking_loss=True, rank_lambda=0.2, rank_margin=0.0)
+2026-02-11 14:31:39,886 - INFO - DEVICE: cuda
+2026-02-11 14:31:39,886 - INFO - Using target_sr=24000 Hz and max_duration=30s for datasets.
+2026-02-11 14:31:39,886 - INFO - Using seed: 1984
+2026-02-11 14:31:43,618 - INFO - Initializing MosDataset: target_sr=24000, max_duration=30s, is_eval_mode=False
+2026-02-11 14:31:43,618 - INFO - Reading MOS list: /share/nas169/jethrowang/MusicEval-full/sets/train_mos_list.txt
+2026-02-11 14:31:43,618 - INFO - Expecting WAV files in: /share/nas169/jethrowang/MusicEval-full/wav
+2026-02-11 14:31:46,117 - INFO - Found and successfully processed 1923 valid audio file entries from /share/nas169/jethrowang/MusicEval-full/sets/train_mos_list.txt.
+2026-02-11 14:31:46,117 - INFO - Initializing MosDataset: target_sr=24000, max_duration=30s, is_eval_mode=False
+2026-02-11 14:31:46,118 - INFO - Reading MOS list: /share/nas169/jethrowang/MusicEval-full/sets/dev_mos_list.txt
+2026-02-11 14:31:46,118 - INFO - Expecting WAV files in: /share/nas169/jethrowang/MusicEval-full/wav
+2026-02-11 14:31:46,718 - INFO - Found and successfully processed 412 valid audio file entries from /share/nas169/jethrowang/MusicEval-full/sets/dev_mos_list.txt.
+2026-02-11 14:31:46,718 - INFO - Initializing MosDataset: target_sr=24000, max_duration=30s, is_eval_mode=False
+2026-02-11 14:31:46,719 - INFO - Reading MOS list: /share/nas169/jethrowang/MusicEval-full/sets/test_mos_list.txt
+2026-02-11 14:31:46,719 - INFO - Expecting WAV files in: /share/nas169/jethrowang/MusicEval-full/wav
+2026-02-11 14:31:47,501 - INFO - Found and successfully processed 413 valid audio file entries from /share/nas169/jethrowang/MusicEval-full/sets/test_mos_list.txt.
+2026-02-11 14:31:47,501 - INFO - Training muq_roberta_transformer_dist model. Is CORAL: False. Is Distribution (KLDiv): True. Using ranking loss: True
+2026-02-11 14:31:48,611 - INFO - Starting training loop...

@@ -405,7 +405,6 @@ def main() -> None: # Added type hint for clarity
     logging.info(f"Using target_sr={target_sr} Hz and max_duration={max_audio_seconds}s for datasets.")
     logging.info(f"Using seed: {SEED}")
 
-
     is_coral_model = (args.dist_prediction_score_style == 'coral' and 
                   args.model_type == 'muq_roberta_transformer_dist_coral') # More specific
     
@@ -581,8 +580,8 @@ def main() -> None: # Added type hint for clarity
     validloader = DataLoader(validset, batch_size=args.valid_batch_size, shuffle=False, num_workers=4, collate_fn=validset.collate_fn, pin_memory=True)
     testloader = DataLoader(testset, batch_size=args.valid_batch_size, shuffle=False, num_workers=4, collate_fn=testset.collate_fn, pin_memory=True)
 
-
-    logging.info(f"Training {MODEL_TYPE} model. Is CORAL: {is_coral_model}. Is Distribution (KLDiv): {is_distribution_model}")
+    # === [新增] 記錄是否使用 Ranking Loss ===
+    logging.info(f"Training {MODEL_TYPE} model. Is CORAL: {is_coral_model}. Is Distribution (KLDiv): {is_distribution_model}. Using ranking loss: {args.use_ranking_loss}")
 
     if is_distribution_model: 
         criterion = nn.KLDivLoss(reduction='batchmean')
@@ -693,7 +692,9 @@ def main() -> None: # Added type hint for clarity
         # --- START OF COPIED/ADAPTED TRAINING EPOCH LOGIC ---
         train_epoch_loss, train_epoch_loss1, train_epoch_loss2 = 0.0, 0.0, 0.0
         train_total_samples = 0
-        
+
+        # === [新增] 初始化存 1 個 epoch 的 total KL Divergence Loss 和 Ranking Loss 的變數 ===
+        kl_div_epoch_loss, ranking_epoch_loss = 0.0, 0.0
             
         all_train_labels1, all_train_preds1, all_train_labels2, all_train_preds2 = [], [], [], []
         pbar_train = tqdm(trainloader, desc=f"Epoch {epoch} Training", ncols=100, leave=False)

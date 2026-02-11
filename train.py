@@ -37,6 +37,7 @@ from models.roberta_transformer import ( MuQRoBERTaTransformerDistributionPredic
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 import torch.nn.functional as F
+import gc
 
 # Define your model's hyperparameters (must match your trained model)
 model_hyperparams = {
@@ -678,7 +679,9 @@ def main() -> None: # Added type hint for clarity
     print("-" * 40)
     print(f"Configuration: batch_size={batch_size}, audio_seq_len=~{max_audio_seq_len}, text_seq_len={max_text_seq_len}")
 
-
+    del dummy_wavs, dummy_texts
+    torch.cuda.empty_cache()
+    
 
     logging.info("Starting training loop...")
     for epoch in range(1, args.num_epochs + 1):
@@ -866,6 +869,10 @@ def main() -> None: # Added type hint for clarity
         if patience_counter >= args.patience:
             logging.info(f"Early stopping at epoch {epoch} based on validation set performance.")
             break
+        
+        del val_results # 刪除參照
+        gc.collect()    # 強制回收 Python 物件
+        torch.cuda.empty_cache() # 清理 PyTorch 緩存
     # --- End of Training Loop ---
 
     writer.close()

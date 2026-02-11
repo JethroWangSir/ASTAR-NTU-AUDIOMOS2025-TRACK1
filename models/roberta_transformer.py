@@ -7,7 +7,7 @@ import math # For positional encoding
 import ipdb as pdb
 from mamba_ssm import Mamba
 from augment import OrdinalPredictorHeadMonotonic
-from models.uncertainty_components import BetaParameterHead
+# from models.uncertainty_components import BetaParameterHead
 from models.base_models import PositionalEncoding, AttentivePooling, BaseTransformerPredictor
 
 
@@ -131,7 +131,7 @@ class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
                  audio_transformer_layers=1, audio_transformer_heads=4, audio_transformer_dim=1024,
                  text_transformer_layers=1, text_transformer_heads=4, text_transformer_dim=768, # For text if not using RoBERTa directly
                 common_embed_dim=768, cross_attention_heads=4, dropout_rate=0.3):
-        super().__init__()
+        super().__init__(muq_model, roberta_model)
         
 
         # --- Prediction Heads ---

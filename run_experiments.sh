@@ -3,7 +3,7 @@
 # Script to reproduce the experiments for the ASTAR-NTU AudioMOS Challenge 2025 Track 1 submission.
 
 # IMPORTANT: Set the DATA_DIR variable to the root of your MusicEval-phase1 dataset.
-DATA_DIR="/dataset/speech_and_audio_datasets/MusicEval-phase1"
+DATA_DIR="/share/nas169/jethrowang/MusicEval-full"
 TRAIN_LIST="${DATA_DIR}/sets/train_mos_list.txt"
 DEV_LIST="${DATA_DIR}/sets/dev_mos_list.txt"
 

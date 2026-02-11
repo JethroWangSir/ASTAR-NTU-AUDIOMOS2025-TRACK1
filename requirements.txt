@@ -7,5 +7,11 @@ torchaudio==2.4.1
 torchvision==0.19.1
 tqdm==4.67.1
 transformers==4.46.3
-pip install laion-clap==1.1.6 tensorboard
-pip install muq
+tensorboard
+muq
+matplotlib==3.6.3
+contourpy==1.1.0
+seaborn==0.13.2
+ipdb==0.13.13
+causal-conv1d==1.4.0
+mamba_ssm==2.2.2

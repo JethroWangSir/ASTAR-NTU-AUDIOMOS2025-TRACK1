@@ -175,7 +175,7 @@ class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
 
 
 
-class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor_with_SGCI):
+class MuQRoBERTaTransformerDistributionPredictor_with_SGCI(BaseTransformerPredictor_with_SGCI):
     def __init__(self, muq_model, roberta_model, num_bins=20,
                  audio_transformer_layers=1, audio_transformer_heads=4, audio_transformer_dim=1024,
                  text_transformer_layers=1, text_transformer_heads=4, text_transformer_dim=768, # For text if not using RoBERTa directly

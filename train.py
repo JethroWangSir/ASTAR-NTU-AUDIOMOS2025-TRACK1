@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-from models.roberta_transformer import ( MuQRoBERTaTransformerDistributionPredictor,MuQRoBERTaTransformerScalarPredictor, MuQRoBERTaTransformerDistributionPredictorCORALPredictor, MuQRoBERTaTransformerLSTMHeadCrossAttnDecoupledPredictor, MuQMulanRoBERTaTransformerDistributionPredictor, MuQRoBERTaTransformerDecoupledDist)
+from models.roberta_transformer import ( MuQRoBERTaTransformerDistributionPredictor,MuQRoBERTaTransformerDistributionPredictor_with_SGCI,MuQRoBERTaTransformerScalarPredictor, MuQRoBERTaTransformerDistributionPredictorCORALPredictor, MuQRoBERTaTransformerLSTMHeadCrossAttnDecoupledPredictor, MuQMulanRoBERTaTransformerDistributionPredictor, MuQRoBERTaTransformerDecoupledDist)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -359,6 +359,7 @@ def main() -> None: # Added type hint for clarity
     parser.add_argument('--use_ranking_loss', action='store_true', help='Enable Pairwise Ranking Loss to improve SRCC.')
     parser.add_argument('--rank_lambda', type=float, default=0.2, help='Weight for ranking loss (default: 0.2).')
     parser.add_argument('--rank_margin', type=float, default=0.0, help='Margin for ranking loss (default: 0.0).')
+    parser.add_argument('--use_sgci', action='store_true', help='Enable Semantic-Guided Channel Injection to improve SRCC.')
 
     args = parser.parse_args()
 
@@ -431,7 +432,10 @@ def main() -> None: # Added type hint for clarity
                 net = MuQRoBERTaTransformerDistributionPredictorCORALPredictor(muq, roberta, num_ranks=NUM_RANKS_FOR_CORAL).to(device)
                 is_coral_model = True # Add a flag for clarity if needed
             else:
-                net = MuQRoBERTaTransformerDistributionPredictor(muq, roberta, num_bins=args.num_bins).to(device)
+                if args.use_sgci:
+                    net = MuQRoBERTaTransformerDistributionPredictor_with_SGCI(muq, roberta, num_bins=args.num_bins).to(device)
+                else:
+                    net = MuQRoBERTaTransformerDistributionPredictor(muq, roberta, num_bins=args.num_bins).to(device)
         
         elif MODEL_TYPE == 'muq_roberta_transformer_scalar':
             net = MuQRoBERTaTransformerScalarPredictor(muq, roberta).to(device)
@@ -583,7 +587,7 @@ def main() -> None: # Added type hint for clarity
     testloader = DataLoader(testset, batch_size=args.valid_batch_size, shuffle=False, num_workers=4, collate_fn=testset.collate_fn, pin_memory=True)
 
     # === [新增] 記錄是否使用 Ranking Loss ===
-    logging.info(f"Training {MODEL_TYPE} model. Is CORAL: {is_coral_model}. Is Distribution (KLDiv): {is_distribution_model}. Using ranking loss: {args.use_ranking_loss}")
+    logging.info(f"Training {MODEL_TYPE} model. Is CORAL: {is_coral_model}. Is Distribution (KLDiv): {is_distribution_model}. Using ranking loss: {args.use_ranking_loss}. Using SGCI: {args.use_sgci}")
 
     if is_distribution_model: 
         criterion = nn.KLDivLoss(reduction='batchmean')

@@ -12,6 +12,4 @@ python train.py \
     --optimizer adamw \
     --dist_prediction_score_style gaussian \
     --num_bins 20 \
-    --use_ranking_loss \
-    --rank_lambda 0.2 \
-    --rank_margin 0.0
+    --use_sgci

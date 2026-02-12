@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export CUDA_VISIBLE_DEVICES=0
+
 python train.py \
     --expname primary_model_gaussian_sgci_film \
     --model_type muq_roberta_transformer_dist \

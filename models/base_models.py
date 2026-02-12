@@ -283,11 +283,11 @@ class SemanticGuidedChannelInjection(nn.Module):
             self.film_fc[-1].weight.fill_(0)
             self.film_fc[-1].bias.fill_(0)
 
-    def forward(self, audio_seq, text_seq, text_padding_mask=None):
+    def forward(self, audio_seq, text_seq, text_mask=None):
         """
         Args:
-            text_padding_mask: (B, T) Boolean Tensor. 
-                               True 代表 Padding (要遮掉), False 代表有字.
+            text_mask: (B, T) Boolean Tensor. 
+                        True 代表 Padding (要遮掉), False 代表有字.
         """
         
         # === [修正 Mask] 適配 AttentivePooling ===

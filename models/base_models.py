@@ -292,13 +292,13 @@ class SemanticGuidedChannelInjection(nn.Module):
         
         # === [修正 Mask] 適配 AttentivePooling ===
         # AttentivePooling 規定: "mask==0 (False) 的地方要被遮掉"
-        # 我們的輸入 text_padding_mask: "True 的地方是 Padding"
+        # 我們的輸入 text_mask: "True 的地方是 Padding"
         # 所以我們必須「反轉」它 (Logical NOT):
         #   ~True (Pad)  -> False (0) -> AttentivePooling 會遮掉它 (正確!)
         #   ~False (Valid)-> True (1) -> AttentivePooling 會保留它 (正確!)
         
-        if text_padding_mask is not None:
-            valid_mask = ~text_padding_mask 
+        if text_mask is not None:
+            valid_mask = ~text_mask 
         else:
             valid_mask = None
 

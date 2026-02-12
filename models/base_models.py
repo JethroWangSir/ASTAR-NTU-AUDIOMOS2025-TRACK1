@@ -178,79 +178,135 @@ class BaseTransformerPredictor(BasePredictor):
 
         return pooled_audio_features, fused_features
 
+# class SemanticGuidedChannelInjection(nn.Module):
+#     """
+#     Novelty:
+#     Instead of standard Cross-Attention, we use Text to dynamically re-calibrate
+#     Audio channels. This addresses the 'Ambiguity' pain point where vague text
+#     should guide WHICH features (channels) to focus on, rather than WHERE (time) to look.
+#     """
+#     def __init__(self, audio_dim, text_dim, reduction=4):
+#         super().__init__()
+        
+#         # 1. Text Semantic Extractor (Global & Local)
+#         # 不只看個別詞，也看整句的語義 Summary
+#         # 這裡使用 AttentivePooling，因為一句話裡只有少數關鍵詞（如 "noisy", "muffled"）重要，
+#         # 冠詞介系詞（"the", "is"）不重要。Attention 機制會自動抓出關鍵詞。
+#         self.text_pool = AttentivePooling(text_dim) 
+        
+#         # 2. Channel Attention Generator (Squeeze-and-Excitation style but cross-modal)
+#         # 用文字特徵生成 Audio 的 Channel Weights
+#         # 目的：學習「文字語義」跟「音訊通道」之間的非線性關係。
+#         # reduction=4 是為了減少參數量，形成一個 Bottleneck，強迫模型學習最精華的特徵對應。
+#         self.se_fc = nn.Sequential(
+#             nn.Linear(text_dim, audio_dim // reduction),
+#             nn.ReLU(),
+#             nn.Linear(audio_dim // reduction, audio_dim),
+#             nn.Sigmoid() # 輸出 0~1 的權重
+#         )
+
+#         # 3. Injection / Fusion Layer
+#         # 為了保留原始音訊細節，我們使用 Residual 結構
+#         self.out_proj = nn.Linear(audio_dim, audio_dim)
+#         self.norm = nn.LayerNorm(audio_dim)
+
+#     def forward(self, audio_seq, text_seq, text_mask=None):
+#         """
+#         audio_seq: (B, T_a, D_a)
+#         text_seq:  (B, T_t, D_t)
+#         text_mask: (B, T_t) True where PADDED (reverse of standard mask usually)
+#         """
+#         # Step 1: Summarize Text into a Global Semantic Vector
+#         # 我們假設文字的順序在 '指導音訊特徵' 上沒那麼重要，重要的是'關鍵詞'
+#         # text_mask: True where padded. AttentivePooling expects mask=True where valid? 
+#         # 需確認 AttentivePooling 的 mask 定義，通常是 True where Valid (0 in padding mask)
+#         # 這裡假設傳入的是 boolean mask (True=Padding)，需要反轉
+#         # 把這句話從序列 (32, 20, 768) 濃縮成一個語義向量 (32, 768)
+#         # 這代表了整句話的 "Global Context" (全域語義)
+#         valid_mask = ~text_mask if text_mask is not None else None
+#         text_global = self.text_pool(text_seq, mask=valid_mask) # (B, D_t)
+
+#         # Step 2: Generate Channel Weights from Text
+#         # "根據這句話，我該關注音訊的哪些特徵通道？"
+#         # 根據語義向量，算出 1024 個通道各自的重要性
+#         # 輸入: (32, 768) -> MLP -> 輸出: (32, 1024)
+#         # 數值範圍在 0.0 ~ 1.0 之間
+#         channel_weights = self.se_fc(text_global) # (B, D_a)
+        
+#         # Expand weights to match time dimension: (B, 1, D_a)
+#         # 為了跟音訊相乘，我們需要把時間維度擴展出來
+#         # (32, 1024) -> (32, 1, 1024)
+#         # 意思就是：這個通道的權重，對整段音訊的所有時間點都適用 (Time-invariant)
+#         channel_weights = channel_weights.unsqueeze(1) 
+
+#         # Step 3: Channel Injection (Modulation)
+#         # 這是核心：Text 調整 Audio 的特徵強度
+#         # Element-wise Multiplication (Hadamard product)
+#         # Audio (32, 1000, 1024) * Weights (32, 1, 1024)
+#         # PyTorch 會自動廣播 (Broadcasting)，把 Weights 複製 1000 份對齊時間
+#         # 結果：如果不重要的特徵通道 (權重接近0)，整條時間軸上的數值都會被壓低
+#         audio_modulated = audio_seq * channel_weights
+
+#         # Step 4: Fusion & Residual
+#         # 我們把調整過後的特徵加回原始特徵，防止資訊丟失
+#         # 原始音訊 (audio_seq) + 調變後的音訊 (audio_modulated)
+#         # 這樣做保證了：就算文字完全沒用，模型至少還能退化成原本的音訊模型，不會變爛。
+#         out = self.norm(self.out_proj(audio_modulated) + audio_seq)
+        
+#         return out
+
 class SemanticGuidedChannelInjection(nn.Module):
-    """
-    Novelty:
-    Instead of standard Cross-Attention, we use Text to dynamically re-calibrate
-    Audio channels. This addresses the 'Ambiguity' pain point where vague text
-    should guide WHICH features (channels) to focus on, rather than WHERE (time) to look.
-    """
     def __init__(self, audio_dim, text_dim, reduction=4):
         super().__init__()
+        self.audio_dim = audio_dim
         
-        # 1. Text Semantic Extractor (Global & Local)
-        # 不只看個別詞，也看整句的語義 Summary
-        # 這裡使用 AttentivePooling，因為一句話裡只有少數關鍵詞（如 "noisy", "muffled"）重要，
-        # 冠詞介系詞（"the", "is"）不重要。Attention 機制會自動抓出關鍵詞。
+        # 1. Text Summarizer
         self.text_pool = AttentivePooling(text_dim) 
         
-        # 2. Channel Attention Generator (Squeeze-and-Excitation style but cross-modal)
-        # 用文字特徵生成 Audio 的 Channel Weights
-        # 目的：學習「文字語義」跟「音訊通道」之間的非線性關係。
-        # reduction=4 是為了減少參數量，形成一個 Bottleneck，強迫模型學習最精華的特徵對應。
-        self.se_fc = nn.Sequential(
+        # 2. FiLM Generator (產生 Gamma 和 Beta)
+        # 我們把最後一層的輸出維度變兩倍 (一組給 Gamma, 一組給 Beta)
+        self.film_fc = nn.Sequential(
             nn.Linear(text_dim, audio_dim // reduction),
             nn.ReLU(),
-            nn.Linear(audio_dim // reduction, audio_dim),
-            nn.Sigmoid() # 輸出 0~1 的權重
+            nn.Linear(audio_dim // reduction, audio_dim * 2) # Output dim * 2
         )
 
-        # 3. Injection / Fusion Layer
-        # 為了保留原始音訊細節，我們使用 Residual 結構
+        # 3. Output Projection
         self.out_proj = nn.Linear(audio_dim, audio_dim)
         self.norm = nn.LayerNorm(audio_dim)
 
+        # === [關鍵修正] 初始化 ===
+        # 這是讓成效不掉的關鍵：初始化為 "Identity"
+        # 讓最後一層 Linear 的權重極小，Bias 設為特定值
+        with torch.no_grad():
+            # 讓最後一層的 weight 接近 0
+            self.film_fc[-1].weight.fill_(0)
+            # 讓最後一層的 bias: 
+            # 前半段 (Gamma) 設為 1 (代表乘 1，不改變) -> 但因為我們下面會過 Exp/Sigmoid，這裡視實作而定
+            # 這裡我們採用原始 FiLM 邏輯: 1 + Gamma
+            self.film_fc[-1].bias.fill_(0) 
+
     def forward(self, audio_seq, text_seq, text_mask=None):
-        """
-        audio_seq: (B, T_a, D_a)
-        text_seq:  (B, T_t, D_t)
-        text_mask: (B, T_t) True where PADDED (reverse of standard mask usually)
-        """
-        # Step 1: Summarize Text into a Global Semantic Vector
-        # 我們假設文字的順序在 '指導音訊特徵' 上沒那麼重要，重要的是'關鍵詞'
-        # text_mask: True where padded. AttentivePooling expects mask=True where valid? 
-        # 需確認 AttentivePooling 的 mask 定義，通常是 True where Valid (0 in padding mask)
-        # 這裡假設傳入的是 boolean mask (True=Padding)，需要反轉
-        # 把這句話從序列 (32, 20, 768) 濃縮成一個語義向量 (32, 768)
-        # 這代表了整句話的 "Global Context" (全域語義)
+        # 1. Text Summary
         valid_mask = ~text_mask if text_mask is not None else None
         text_global = self.text_pool(text_seq, mask=valid_mask) # (B, D_t)
 
-        # Step 2: Generate Channel Weights from Text
-        # "根據這句話，我該關注音訊的哪些特徵通道？"
-        # 根據語義向量，算出 1024 個通道各自的重要性
-        # 輸入: (32, 768) -> MLP -> 輸出: (32, 1024)
-        # 數值範圍在 0.0 ~ 1.0 之間
-        channel_weights = self.se_fc(text_global) # (B, D_a)
+        # 2. Generate Gamma & Beta
+        film_params = self.film_fc(text_global) # (B, D_a * 2)
         
-        # Expand weights to match time dimension: (B, 1, D_a)
-        # 為了跟音訊相乘，我們需要把時間維度擴展出來
-        # (32, 1024) -> (32, 1, 1024)
-        # 意思就是：這個通道的權重，對整段音訊的所有時間點都適用 (Time-invariant)
-        channel_weights = channel_weights.unsqueeze(1) 
+        # 切分成 Gamma (Scale) 和 Beta (Shift)
+        gamma, beta = torch.chunk(film_params, 2, dim=-1)
+        
+        # 擴展維度 (B, 1, D_a)
+        gamma = gamma.unsqueeze(1)
+        beta = beta.unsqueeze(1)
 
-        # Step 3: Channel Injection (Modulation)
-        # 這是核心：Text 調整 Audio 的特徵強度
-        # Element-wise Multiplication (Hadamard product)
-        # Audio (32, 1000, 1024) * Weights (32, 1, 1024)
-        # PyTorch 會自動廣播 (Broadcasting)，把 Weights 複製 1000 份對齊時間
-        # 結果：如果不重要的特徵通道 (權重接近0)，整條時間軸上的數值都會被壓低
-        audio_modulated = audio_seq * channel_weights
+        # 3. Apply FiLM (Affine Transformation)
+        # 公式: (1 + gamma) * Audio + beta
+        # 這種寫法最安全，因為初始化 gamma=0, beta=0 時，結果就是原始 Audio
+        audio_modulated = (1.0 + gamma) * audio_seq + beta
 
-        # Step 4: Fusion & Residual
-        # 我們把調整過後的特徵加回原始特徵，防止資訊丟失
-        # 原始音訊 (audio_seq) + 調變後的音訊 (audio_modulated)
-        # 這樣做保證了：就算文字完全沒用，模型至少還能退化成原本的音訊模型，不會變爛。
+        # 4. Residual & Norm
         out = self.norm(self.out_proj(audio_modulated) + audio_seq)
         
         return out

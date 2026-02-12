@@ -1,7 +1,7 @@
 #!/bin/bash
 
 python train.py \
-    --expname primary_model_gaussian_sgci \
+    --expname primary_model_gaussian_sgci_film \
     --model_type muq_roberta_transformer_dist \
     --datadir /share/nas169/jethrowang/MusicEval-full \
     --train_list_path /share/nas169/jethrowang/MusicEval-full/sets/train_mos_list.txt \

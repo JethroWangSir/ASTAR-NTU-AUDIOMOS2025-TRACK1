@@ -260,53 +260,65 @@ class SemanticGuidedChannelInjection(nn.Module):
         super().__init__()
         self.audio_dim = audio_dim
         
-        # 1. Text Summarizer
+        # 1. 不動 AttentivePooling，照常使用
         self.text_pool = AttentivePooling(text_dim) 
         
-        # 2. FiLM Generator (產生 Gamma 和 Beta)
-        # 我們把最後一層的輸出維度變兩倍 (一組給 Gamma, 一組給 Beta)
+        # 2. 改用更穩定的 FiLM 生成器 (同時產生 Scale 和 Shift)
+        # 輸出維度變兩倍: 一半給 Gamma (乘法), 一半給 Beta (加法)
         self.film_fc = nn.Sequential(
             nn.Linear(text_dim, audio_dim // reduction),
             nn.ReLU(),
-            nn.Linear(audio_dim // reduction, audio_dim * 2) # Output dim * 2
+            nn.Linear(audio_dim // reduction, audio_dim * 2) 
         )
 
-        # 3. Output Projection
+        # 3. 輸出層
         self.out_proj = nn.Linear(audio_dim, audio_dim)
         self.norm = nn.LayerNorm(audio_dim)
 
-        # === [關鍵修正] 初始化 ===
-        # 這是讓成效不掉的關鍵：初始化為 "Identity"
-        # 讓最後一層 Linear 的權重極小，Bias 設為特定值
+        # === [關鍵救命丹] 初始化 (Identity Initialization) ===
+        # 這是讓你的成效「至少不掉」的關鍵！
+        # 強制讓初始輸出的 Gamma 為 0, Beta 為 0
+        # 這樣一開始: Feature = (1+0)*Audio + 0 = Audio (完全保留原始訊號)
         with torch.no_grad():
-            # 讓最後一層的 weight 接近 0
             self.film_fc[-1].weight.fill_(0)
-            # 讓最後一層的 bias: 
-            # 前半段 (Gamma) 設為 1 (代表乘 1，不改變) -> 但因為我們下面會過 Exp/Sigmoid，這裡視實作而定
-            # 這裡我們採用原始 FiLM 邏輯: 1 + Gamma
-            self.film_fc[-1].bias.fill_(0) 
+            self.film_fc[-1].bias.fill_(0)
 
-    def forward(self, audio_seq, text_seq, text_mask=None):
-        # 1. Text Summary
-        valid_mask = ~text_mask if text_mask is not None else None
+    def forward(self, audio_seq, text_seq, text_padding_mask=None):
+        """
+        Args:
+            text_padding_mask: (B, T) Boolean Tensor. 
+                               True 代表 Padding (要遮掉), False 代表有字.
+        """
+        
+        # === [修正 Mask] 適配 AttentivePooling ===
+        # AttentivePooling 規定: "mask==0 (False) 的地方要被遮掉"
+        # 我們的輸入 text_padding_mask: "True 的地方是 Padding"
+        # 所以我們必須「反轉」它 (Logical NOT):
+        #   ~True (Pad)  -> False (0) -> AttentivePooling 會遮掉它 (正確!)
+        #   ~False (Valid)-> True (1) -> AttentivePooling 會保留它 (正確!)
+        
+        if text_padding_mask is not None:
+            valid_mask = ~text_padding_mask 
+        else:
+            valid_mask = None
+
+        # 1. 提取文字語義 (現在 Mask 邏輯正確了)
         text_global = self.text_pool(text_seq, mask=valid_mask) # (B, D_t)
 
-        # 2. Generate Gamma & Beta
+        # 2. 生成 FiLM 參數
         film_params = self.film_fc(text_global) # (B, D_a * 2)
+        gamma, beta = torch.chunk(film_params, 2, dim=-1) # 分割成 Scale 和 Shift
         
-        # 切分成 Gamma (Scale) 和 Beta (Shift)
-        gamma, beta = torch.chunk(film_params, 2, dim=-1)
-        
-        # 擴展維度 (B, 1, D_a)
+        # 擴展維度以便廣播: (B, 1, D_a)
         gamma = gamma.unsqueeze(1)
         beta = beta.unsqueeze(1)
 
-        # 3. Apply FiLM (Affine Transformation)
-        # 公式: (1 + gamma) * Audio + beta
-        # 這種寫法最安全，因為初始化 gamma=0, beta=0 時，結果就是原始 Audio
+        # 3. 執行 FiLM 調變 (Affine Transformation)
+        # 公式: (1 + Gamma) * Audio + Beta
+        # 這種加法式結構比單純的 Sigmoid 乘法更不容易導致梯度消失
         audio_modulated = (1.0 + gamma) * audio_seq + beta
 
-        # 4. Residual & Norm
+        # 4. 殘差連接與正規化
         out = self.norm(self.out_proj(audio_modulated) + audio_seq)
         
         return out

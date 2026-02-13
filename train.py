@@ -364,8 +364,8 @@ def main() -> None: # Added type hint for clarity
     parser.add_argument('--rank_lambda', type=float, default=0.2, help='Weight for ranking loss (default: 0.2).')
     parser.add_argument('--pairwise_margin', type=float, default=0.0, help='Margin for pairwise ranking loss (default: 0.0).')
     parser.add_argument('--listwise_temperature', type=float, default=1.0, help='Temperature for listwise ranking loss softmax (default: 1.0).')
-    parser.add_argument('--qamro_preference_factor', type=float, default=7.0, help='Preference factor for QAMRO loss (default: 7.0).')
-    parser.add_argument('--qamro_margin_scale', type=float, default=0.2, help='Margin scale for QAMRO loss (default: 0.2).')
+    parser.add_argument('--qamro_preference_factor', type=float, default=7.0, help='Preference factor for QAMRO (default: 7.0).')
+    parser.add_argument('--qamro_margin_scale', type=float, default=0.2, help='Margin scale for QAMRO (default: 0.2).')
 
     args = parser.parse_args()
 

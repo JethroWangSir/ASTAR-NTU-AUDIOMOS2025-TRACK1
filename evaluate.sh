@@ -34,7 +34,7 @@ echo "🚀 開始載入 Checkpoint 進行預測 (Predict Only 模式)..."
 echo "📂 Checkpoint: ${CKPT_PATH}"
 echo "📄 測試名單: ${TEST_LIST}"
 
-python your_script_name.py \
+python train.py \
     --datadir "$DATA_DIR" \
     --expname "$EXP_NAME" \
     --model_type "$MODEL_TYPE" \
@@ -46,6 +46,6 @@ python your_script_name.py \
     --dist_prediction_score_style "$SCORE_STYLE" \
     --use_ranking_loss \
     --ranking_loss_type "$RANKING_LOSS_TYPE" \
-    --valid_batch_size 16
+    --valid_batch_size 1
 
 echo "✅ 評估完成！請至 exp/${EXP_NAME} 資料夾下查看 answer.txt 以及 detailed_preds_*.pt 檔案。"

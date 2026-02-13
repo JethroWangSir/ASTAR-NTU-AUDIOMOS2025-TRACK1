@@ -174,3 +174,71 @@ def compute_listwise_ranking_loss(pred_scores, true_scores, temperature=1.0, dev
     loss = -torch.sum(true_dist * pred_log_dist)
     
     return loss
+
+# === [新增] 計算考量品質權重與自適應邊界的 Pairwise Ranking Loss (QAMRO) ===
+def compute_quality_aware_adaptive_margin_ranking_loss(pred_scores, true_scores, preference_factor=7.0, margin_scale=0.2, device='cuda'):
+    """
+    計算一個 Batch 內考量「品質權重 (Quality-aware)」與「自適應邊界 (Adaptive Margin)」的 Pairwise Ranking Loss。
+    
+    核心概念：
+    1. Quality-aware: 針對真實分數較高 (高品質) 的配對，給予更大的懲罰權重，強迫模型在好聽的音訊上排得更準。
+    2. Adaptive Margin: 配對之間的真實分數差距越大，要求模型預測的差距 (Margin) 也要越大。
+    
+    Args:
+        pred_scores (Tensor): 模型預測的純量分數 (B, 1) 或 (B,)
+        true_scores (Tensor): 真實的 MOS 分數 (B, 1) 或 (B,)
+        preference_factor (float): 控制高品質樣本權重的放大係數 (預設 7.0)
+        margin_scale (float): 控制真實分數差距轉換為 Margin 的比例係數 (預設 0.2)
+        device (str): 運算設備
+        
+    Returns:
+        loss (Tensor): 計算出的 scalar loss
+    """
+    # 1. 確保形狀為一維向量 (Batch_Size,)
+    pred = pred_scores.view(-1)
+    true = true_scores.view(-1)
+    batch_size = pred.size(0)
+
+    # 2. 防呆與極端情況處理 (Early Exit)
+    # 如果這個 Batch 裡大家分數都一樣 (最大值等於最小值)，無法計算相對排序與正規化，直接回傳 0
+    if true.max() == true.min():
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    # 3. Quality-aware 標籤正規化與權重計算
+    # 將真實分數正規化到 [0, 1] 區間
+    norm_labels = (true - true.min()) / (true.max() - true.min())
+    
+    # 建立 Quality-level 矩陣: 比較配對 (i, j) 時，取兩者中較高的分數作為該配對的品質基準
+    # 利用廣播機制: (B, 1) 與 (1, B) -> (B, B)
+    quality_level_matrix = torch.max(norm_labels.unsqueeze(1), norm_labels.unsqueeze(0))
+    
+    # 建立權重矩陣: 高品質的配對會獲得較大的權重 (1.0 ~ preference_factor 之間)
+    weight_matrix = 1.0 + (preference_factor - 1.0) * quality_level_matrix
+
+    # 4. 計算兩兩配對的差異與自適應邊界 (Adaptive Margin)
+    # 預測值與真實值的差異矩陣 (B, B)
+    pred_diff = pred.unsqueeze(1) - pred.unsqueeze(0)
+    true_diff = true.unsqueeze(1) - true.unsqueeze(0)
+    
+    # 自適應邊界: 真實分數差異越大，要求預測分數拉開的 Margin 也要越大
+    margin_matrix = torch.abs(true_diff) * margin_scale
+
+    # 5. 產生目標標籤與遮罩 (Mask)
+    # 產生標籤 (1: i>j, -1: i<j, 0: i==j)
+    targets = torch.sign(true_diff)
+    
+    # 我們只關心分數「不同」的配對，忽略分數相同的
+    mask = (true_diff != 0)
+
+    # 6. 計算加權的 Hinge Loss
+    # 基礎 Hinge Loss = max(0, -target * pred_diff + margin)
+    base_loss = torch.relu(-targets * pred_diff + margin_matrix)
+    
+    # 套用 Quality-aware 權重矩陣
+    weighted_loss = weight_matrix * base_loss
+    
+    # 7. 計算最終損失
+    # 僅針對有效的配對 (mask 為 True 的位置) 加總，並除以有效配對的數量取平均
+    loss = torch.sum(weighted_loss[mask]) / torch.sum(mask)
+    
+    return loss

@@ -21,7 +21,7 @@ import random
 from muq import MuQ
 # from torch.utils.data.dataset import Dataset # Not directly used if using custom datasets
 from torch.utils.data import DataLoader
-from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss
+from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss, compute_quality_aware_adaptive_margin_ranking_loss
 from dataset_mos import MosDataset, PersonMosDataset
 from augment import mixup_data, scores_to_one_hot, scores_to_gaussian_target
 
@@ -359,11 +359,13 @@ def main() -> None: # Added type hint for clarity
 
     # === [新增] 選擇 Ranking Loss 種類與參數 ===
     parser.add_argument('--use_ranking_loss', action='store_true', help='Enable Ranking Loss to improve SRCC.')
-    parser.add_argument('--ranking_loss_type', type=str, choices=['pairwise', 'listwise'], default='pairwise', 
-                        help='Type of ranking loss to use (pairwise or listwise).')
+    parser.add_argument('--ranking_loss_type', type=str, choices=['pairwise', 'listwise', 'qamro'], default='pairwise', 
+                        help='Type of ranking loss to use.')
     parser.add_argument('--rank_lambda', type=float, default=0.2, help='Weight for ranking loss (default: 0.2).')
     parser.add_argument('--pairwise_margin', type=float, default=0.0, help='Margin for pairwise ranking loss (default: 0.0).')
     parser.add_argument('--listwise_temperature', type=float, default=1.0, help='Temperature for listwise ranking loss softmax (default: 1.0).')
+    parser.add_argument('--qamro_preference_factor', type=float, default=7.0, help='Preference factor for QAMRO loss (default: 7.0).')
+    parser.add_argument('--qamro_margin_scale', type=float, default=0.2, help='Margin scale for QAMRO loss (default: 0.2).')
 
     args = parser.parse_args()
 
@@ -820,6 +822,13 @@ def main() -> None: # Added type hint for clarity
                                 )
                                 rank_loss_coherence = args.rank_lambda * compute_listwise_ranking_loss(
                                     coherence_score, labels2, temperature=args.listwise_temperature, device=device
+                                )
+                            elif args.ranking_loss_type == 'qamro':
+                                rank_loss_overall = args.rank_lambda * compute_quality_aware_adaptive_margin_ranking_loss(
+                                    overall_score, labels1, preference_factor=args.qamro_preference_factor, margin_scale=args.qamro_margin_scale, device=device
+                                )
+                                rank_loss_coherence = args.rank_lambda * compute_quality_aware_adaptive_margin_ranking_loss(
+                                    coherence_score, labels2, preference_factor=args.qamro_preference_factor, margin_scale=args.qamro_margin_scale, device=device
                                 )
                             else:
                                 raise ValueError(f"Unknown ranking loss type: {args.ranking_loss_type}")

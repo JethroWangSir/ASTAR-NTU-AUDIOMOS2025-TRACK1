@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export CUDA_VISIBLE_DEVICES=0
+
 python train.py \
     --expname primary_model_gaussian_pairwise_ranking_loss \
     --model_type muq_roberta_transformer_dist \
@@ -13,5 +15,5 @@ python train.py \
     --dist_prediction_score_style gaussian \
     --num_bins 20 \
     --use_ranking_loss \
-    --rank_lambda 0.2 \
-    --rank_margin 0.0
+    --ranking_loss_type listwise \
+    --listwise_temperature 1.0

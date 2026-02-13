@@ -76,7 +76,7 @@ def systemID(wavID):
         # print(f"Error parsing system ID from {wavID}: {e}") # for debugging
         return "unknown_system" # return a placeholder
 
-# === [新增] 計算一個 Batch 內所有樣本兩兩配對的 Ranking Loss ===
+# === [新增] 計算一個 Batch 內所有樣本兩兩配對的 Pairwise Ranking Loss ===
 def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, device='cuda'):
     """
     計算一個 Batch 內所有樣本兩兩配對的 Ranking Loss。
@@ -127,5 +127,50 @@ def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, device='
     # 7. 計算損失
     # Loss = max(0, -target * (input1 - input2) + margin)
     loss = F.margin_ranking_loss(p_i_flat, p_j_flat, t_flat, margin=margin, reduction='mean')
+    
+    return loss
+
+# === [新增] 計算一個 Batch 內所有樣本的 Listwise Ranking Loss (基於 ListNet) ===
+def compute_listwise_ranking_loss(pred_scores, true_scores, temperature=1.0, device='cuda'):
+    """
+    計算一個 Batch 內所有樣本的 Listwise Ranking Loss。
+    
+    核心概念 (ListNet)：
+    把整個 Batch 視為一個 List，將「預測分數」與「真實分數」通過 Softmax 轉換為機率分佈。
+    分數越高，佔據的機率質量就越大。
+    然後計算這兩個分佈之間的 Cross Entropy (等價於 KL Divergence)。
+    這能強迫模型學習整個 Batch 的全域排序 (Global Ranking)。
+    
+    Args:
+        pred_scores (Tensor): 模型預測的純量分數 (B, 1) 或 (B,)
+        true_scores (Tensor): 真實的 MOS 分數 (B, 1) 或 (B,)
+        temperature (float): Softmax 溫度參數，用於平滑或銳化分佈。
+                             MOS 分數通常很密集，適當調整 T 可以放大差異 (預設 1.0)
+        device (str): 運算設備
+        
+    Returns:
+        loss (Tensor): 計算出的 scalar loss
+    """
+    # 1. 確保形狀為一維向量 (Batch_Size,)
+    pred = pred_scores.view(-1)
+    true = true_scores.view(-1)
+    
+    # 防呆：如果 Batch 只有一筆資料，無法計算排列，直接回傳 0
+    if pred.size(0) <= 1:
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    # 2. 將分數轉換為機率分佈 (Softmax)
+    # 真實分數的分佈 (Target Distribution)
+    # 分數越高，機率越大。使用 detach() 確保真實分數不參與梯度計算。
+    true_dist = F.softmax(true / temperature, dim=0).detach()
+    
+    # 預測分數的分佈 (Predicted Distribution)
+    # 使用 log_softmax 是因為後面算 Cross Entropy 時數值更穩定，能避免 log(0)
+    pred_log_dist = F.log_softmax(pred / temperature, dim=0)
+
+    # 3. 計算 Listwise Loss (Cross Entropy)
+    # 公式: Loss = - sum(P_true * log(P_pred))
+    # 目的: 讓模型預測的排序分佈逼近真實的排序分佈
+    loss = -torch.sum(true_dist * pred_log_dist)
     
     return loss

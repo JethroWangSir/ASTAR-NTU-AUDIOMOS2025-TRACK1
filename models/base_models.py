@@ -382,17 +382,19 @@ class BaseTransformerPredictor_with_SGCI(BasePredictor):
         # Encoders are frozen in __init__. We set them to eval() mode.
         self.muq.eval()
         self.roberta.eval()
-            
-        # We do not need torch.no_grad() here if requires_grad=False is set correctly. Please check if this works, this refactored code has not been verified.
-        muq_output = self.muq(wavs, output_hidden_states=False)
-        audio_seq_embed_raw = muq_output.last_hidden_state # (B, T_a, D_a)
 
-        # Text Encoder
-        text_inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt", max_length=128)
-        text_attention_mask = text_inputs['attention_mask'].to(wavs.device) # (B, T_t)
-        text_inputs_on_device = {k: v.to(wavs.device) for k, v in text_inputs.items()}
-        roberta_output = self.roberta(**text_inputs_on_device)
-        text_seq_embed = roberta_output.last_hidden_state # (B, T_t, D_t)
+        # [修改] 強制不紀錄梯度，節省大量記憶體
+        with torch.no_grad():    
+            # We do not need torch.no_grad() here if requires_grad=False is set correctly. Please check if this works, this refactored code has not been verified.
+            muq_output = self.muq(wavs, output_hidden_states=False)
+            audio_seq_embed_raw = muq_output.last_hidden_state # (B, T_a, D_a)
+
+            # Text Encoder
+            text_inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt", max_length=128)
+            text_attention_mask = text_inputs['attention_mask'].to(wavs.device) # (B, T_t)
+            text_inputs_on_device = {k: v.to(wavs.device) for k, v in text_inputs.items()}
+            roberta_output = self.roberta(**text_inputs_on_device)
+            text_seq_embed = roberta_output.last_hidden_state # (B, T_t, D_t)
 
         # Note: Audio padding mask is currently not utilized in the original implementation.
         audio_padding_mask = None # Transformer expects True where padded

@@ -9,7 +9,8 @@ python train.py \
     --train_list_path /share/nas169/jethrowang/MusicEval-full/person_mos/train_person_mos.txt \
     --validation_list_path /share/nas169/jethrowang/MusicEval-full/person_mos/dev_person_mos.txt \
     --test_list_path /share/nas169/jethrowang/MusicEval-full/person_mos/test_person_mos.txt \
-    --batch_size 32 \
+    --batch_size 28 \
+    --valid_batch_size 28 \
     --lr 5e-5 \
     --optimizer adamw \
     --dist_prediction_score_style beta \

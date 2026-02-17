@@ -155,6 +155,10 @@ class BaseTransformerPredictor(BasePredictor):
         else:
             audio_input_for_fusion = audio_transformed # Standard Architecture
 
+            # # === [新增] 在這裡加上 .detach() 截斷來自 TA 的梯度 ===
+            # # 讓 TA 分支只當個「觀察者」，不更新前方的 audio_transformer_encoder (stop_ta_gradient)
+            # audio_input_for_fusion = audio_input_for_fusion.detach()
+
         # Project to common dimension
         audio_seq_proj = self.audio_seq_proj(audio_input_for_fusion)
         text_seq_proj = self.text_seq_proj(text_seq_embed)

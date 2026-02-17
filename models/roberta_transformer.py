@@ -163,7 +163,7 @@ class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
 
     def forward(self, wavs, texts):
         pooled_audio_features, fused_features = self.forward_features(
-            wavs, texts, use_decoupled_audio_for_cross_attn=False
+            wavs, texts, use_decoupled_audio_for_cross_attn=True
         )
         overall_dist = self.overall_mlp(pooled_audio_features)
         overall_expected = torch.sum(overall_dist * self.bin_centers, dim=1, keepdim=True)

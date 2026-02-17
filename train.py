@@ -359,6 +359,7 @@ def main() -> None: # Added type hint for clarity
 
     # === [新增] 選擇 Ranking Loss 種類與參數 ===
     parser.add_argument('--use_ranking_loss', action='store_true', help='Enable Ranking Loss to improve SRCC.')
+    parser.add_argument('--warmup_epochs', type=int, default=5, help='The number of warmup epochs (default: 5).')
     parser.add_argument('--ranking_loss_type', type=str, choices=['pairwise', 'listwise', 'qamro'], default='pairwise', 
                         help='Type of ranking loss to use.')
     parser.add_argument('--rank_lambda', type=float, default=0.2, help='Weight for ranking loss (default: 0.2).')
@@ -808,35 +809,37 @@ def main() -> None: # Added type hint for clarity
                         kl_div_loss_overall = criterion(torch.log(overall_dist_pred + 1e-10), target1_dist); kl_div_loss_coherence = criterion(torch.log(coherence_dist_pred + 1e-10), target2_dist)
                         
                         # === [新增] 根據參數選擇 Ranking Loss ===
-                        if args.use_ranking_loss:
+                        if args.use_ranking_loss and epoch > args.warmup_epochs:
                             if args.ranking_loss_type == 'pairwise':
                                 rank_loss_overall = args.rank_lambda * compute_pairwise_ranking_loss(
                                     overall_score, labels1, margin=args.pairwise_margin, device=device
                                 )
-                                rank_loss_coherence = args.rank_lambda * compute_pairwise_ranking_loss(
-                                    coherence_score, labels2, margin=args.pairwise_margin, device=device
-                                )
+                                # rank_loss_coherence = args.rank_lambda * compute_pairwise_ranking_loss(
+                                #     coherence_score, labels2, margin=args.pairwise_margin, device=device
+                                # )
                             elif args.ranking_loss_type == 'listwise':
                                 rank_loss_overall = args.rank_lambda * compute_listwise_ranking_loss(
                                     overall_score, labels1, temperature=args.listwise_temperature, device=device
                                 )
-                                rank_loss_coherence = args.rank_lambda * compute_listwise_ranking_loss(
-                                    coherence_score, labels2, temperature=args.listwise_temperature, device=device
-                                )
+                                # rank_loss_coherence = args.rank_lambda * compute_listwise_ranking_loss(
+                                #     coherence_score, labels2, temperature=args.listwise_temperature, device=device
+                                # )
                             elif args.ranking_loss_type == 'qamro':
                                 rank_loss_overall = args.rank_lambda * compute_quality_aware_adaptive_margin_ranking_loss(
                                     overall_score, labels1, preference_factor=args.qamro_preference_factor, margin_scale=args.qamro_margin_scale, device=device
                                 )
-                                rank_loss_coherence = args.rank_lambda * compute_quality_aware_adaptive_margin_ranking_loss(
-                                    coherence_score, labels2, preference_factor=args.qamro_preference_factor, margin_scale=args.qamro_margin_scale, device=device
-                                )
+                                # rank_loss_coherence = args.rank_lambda * compute_quality_aware_adaptive_margin_ranking_loss(
+                                #     coherence_score, labels2, preference_factor=args.qamro_preference_factor, margin_scale=args.qamro_margin_scale, device=device
+                                # )
                             else:
                                 raise ValueError(f"Unknown ranking loss type: {args.ranking_loss_type}")
 
                             kl_div_loss = kl_div_loss_overall + kl_div_loss_coherence
-                            ranking_loss = rank_loss_overall + rank_loss_coherence
+                            # ranking_loss = rank_loss_overall + rank_loss_coherence
+                            ranking_loss = rank_loss_overall
                             loss1_train = kl_div_loss_overall + rank_loss_overall
-                            loss2_train = kl_div_loss_coherence + rank_loss_coherence
+                            # loss2_train = kl_div_loss_coherence + rank_loss_coherence
+                            loss2_train = kl_div_loss_coherence
                         else:
                             loss1_train = kl_div_loss_overall
                             loss2_train = kl_div_loss_coherence
@@ -866,7 +869,7 @@ def main() -> None: # Added type hint for clarity
             pbar_train.set_postfix(loss=train_loss_iter.item())
 
             # === [新增] 記錄 1 個 epoch內 的 total KL Divergence Loss 和 Ranking Loss ===
-            if args.use_ranking_loss:
+            if args.use_ranking_loss and epoch > args.warmup_epochs:
                 kl_div_loss_iter = kl_div_loss
                 ranking_loss_iter = ranking_loss
                 kl_div_epoch_loss += kl_div_loss_iter.item() * current_batch_size
@@ -877,7 +880,7 @@ def main() -> None: # Added type hint for clarity
         logging.info(f"Epoch {epoch} Train: Loss={avg_train_loss:.4f}, MSE_O={train_mse1_ep:.4f}, SRCC_O={train_srcc1_ep:.4f}")
 
         # === [新增] 記錄 1 個 epoch內 的 average KL Divergence Loss 和 Ranking Loss ===
-        if args.use_ranking_loss:
+        if args.use_ranking_loss and epoch > args.warmup_epochs:
             avg_kl_div_loss = kl_div_epoch_loss / train_total_samples if train_total_samples > 0 else 0
             avg_ranking_loss = ranking_epoch_loss / train_total_samples if train_total_samples > 0 else 0
             logging.info(f"Epoch {epoch} KL Divergence Loss={avg_train_loss:.4f}, Ranking Loss={avg_ranking_loss:.4f}")

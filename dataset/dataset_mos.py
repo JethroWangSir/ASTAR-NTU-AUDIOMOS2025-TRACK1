@@ -494,36 +494,43 @@ class BetaMosDataset(Dataset):
         scores = np.array(scores)
         mu = np.mean(scores)
         var = np.var(scores)
-        
-        # 處理極端情況：如果所有評分者給分一模一樣，給予一個極小的變異數
-        if var < eps: var = eps 
 
-        # 將 MOS 分數 (1~5) 正規化到 [0, 1] 區間
+        # 1. 將 MOS 分數 (1~5) 正規化到 [0, 1] 區間
         mu_norm = (mu - 1.0) / 4.0
-        var_norm = var / 16.0
         
-        # Beta 分佈的變異數上限檢查：var < mu * (1 - mu)
+        # [修復點 1]: 防止極端平均值 (全 1 分或全 5 分) 導致 max_var 為 0
+        mu_norm = np.clip(mu_norm, eps, 1.0 - eps)
+
+        # 2. 處理變異數
+        var_norm = var / 16.0
         max_var = mu_norm * (1.0 - mu_norm)
-        if var_norm >= max_var:
-            var_norm = max_var - eps
-        if var_norm <= eps:
-            var_norm = eps
+        
+        # [修復點 2]: 嚴格限制 var_norm 在 [eps, max_var - eps] 之間，絕對不能為負！
+        var_norm = np.clip(var_norm, eps, max_var - eps)
             
-        # 動差估計法 (Method of Moments) 計算 Alpha 與 Beta 參數
+        # 3. 動差估計法 (Method of Moments)
         nu = (mu_norm * (1.0 - mu_norm) / var_norm) - 1.0
+        nu = max(nu, eps) # [修復點 3]: 確保 nu 為正數
+
         alpha = mu_norm * nu
         beta_param = (1.0 - mu_norm) * nu
         
-        # 設定 20 個 Bin 的中心點 (1 到 5)
+        # 4. 設定 20 個 Bin 的中心點 (1 到 5)
         bin_centers = np.linspace(1, 5, self.num_bins)
         bin_centers_norm = (bin_centers - 1.0) / 4.0
-        
-        # 避免代入 0 或 1 時 PDF 無限大的問題
         bin_centers_norm = np.clip(bin_centers_norm, eps, 1.0 - eps)
         
-        # 計算 Beta PDF 並轉化為 PMF (機率總和為 1)
+        # 5. 計算 Beta PDF 
         pdf_vals = stats.beta.pdf(bin_centers_norm, alpha, beta_param)
-        pmf = pdf_vals / (np.sum(pdf_vals) + eps)
+        
+        # [修復點 4]: 終極防呆。如果 scipy 還是炸出 NaN 或全部為 0，退化成 One-hot 軟標籤
+        if np.any(np.isnan(pdf_vals)) or np.sum(pdf_vals) == 0:
+            pdf_vals = np.ones_like(bin_centers_norm) * eps # 鋪上一層極小的機率避免 log(0)
+            closest_bin = np.argmin(np.abs(bin_centers_norm - mu_norm))
+            pdf_vals[closest_bin] = 1.0 # 在平均值處給予最高機率
+
+        # 6. 轉化為 PMF (機率總和為 1)
+        pmf = pdf_vals / np.sum(pdf_vals)
         
         return torch.tensor(pmf, dtype=torch.float32), float(mu)
 

@@ -8,7 +8,7 @@ import pandas as pd
 from torch.utils.data.dataset import Dataset
 from collections import Counter
 import numpy as np
-import os
+import scipy.stats as stats
 
 import logging
 
@@ -453,6 +453,136 @@ class MosDataset(Dataset):
 #         coherence_scores = torch.tensor(list(coherence_scores), dtype=torch.float32)
 
 #         return output_wavs, overall_scores, coherence_scores, wavnames
+
+class BetaMosDataset(Dataset):
+    def __init__(self, wavdir, person_mos_list_file, num_bins=20, target_sr=24000, max_duration_seconds=30, is_eval_mode=False):
+        self.wavdir = wavdir
+        self.target_sr = target_sr
+        self.max_samples = int(target_sr * max_duration_seconds)
+        self.num_bins = num_bins
+        self.is_eval_mode = is_eval_mode
+        self.resampler_cache = {}
+
+        self.data = []
+        self.filenames = []
+
+        # 假設 person_mos_list_file 的格式為: filename, rater_id, mos_quality, mos_alignment
+        # 如果是 eval_mode (測試集沒有真實標籤)，我們仍需相容
+        df = pd.read_csv(person_mos_list_file, header=None, names=['filename', 'rater_id', 'mos_quality', 'mos_alignment'])
+        grouped = df.groupby('filename')
+
+        for filename, group in grouped:
+            self.filenames.append(filename)
+            quality_scores = group['mos_quality'].tolist()
+            alignment_scores = group['mos_alignment'].tolist()
+            
+            # 取得 20 bins 的 Beta 分佈 PMF 與 平均分數
+            quality_pmf, mean_q = self._get_beta_pmf(quality_scores)
+            alignment_pmf, mean_a = self._get_beta_pmf(alignment_scores)
+            
+            self.data.append({
+                'filename': filename,
+                'quality_pmf': quality_pmf,
+                'alignment_pmf': alignment_pmf,
+                'mean_quality': mean_q,
+                'mean_alignment': mean_a
+            })
+
+        logging.info(f"BetaMosDataset: Loaded {len(self.filenames)} unique audio files with Beta distribution soft labels.")
+
+    def _get_beta_pmf(self, scores, eps=1e-5):
+        scores = np.array(scores)
+        mu = np.mean(scores)
+        var = np.var(scores)
+        
+        # 處理極端情況：如果所有評分者給分一模一樣，給予一個極小的變異數
+        if var < eps: var = eps 
+
+        # 將 MOS 分數 (1~5) 正規化到 [0, 1] 區間
+        mu_norm = (mu - 1.0) / 4.0
+        var_norm = var / 16.0
+        
+        # Beta 分佈的變異數上限檢查：var < mu * (1 - mu)
+        max_var = mu_norm * (1.0 - mu_norm)
+        if var_norm >= max_var:
+            var_norm = max_var - eps
+        if var_norm <= eps:
+            var_norm = eps
+            
+        # 動差估計法 (Method of Moments) 計算 Alpha 與 Beta 參數
+        nu = (mu_norm * (1.0 - mu_norm) / var_norm) - 1.0
+        alpha = mu_norm * nu
+        beta_param = (1.0 - mu_norm) * nu
+        
+        # 設定 20 個 Bin 的中心點 (1 到 5)
+        bin_centers = np.linspace(1, 5, self.num_bins)
+        bin_centers_norm = (bin_centers - 1.0) / 4.0
+        
+        # 避免代入 0 或 1 時 PDF 無限大的問題
+        bin_centers_norm = np.clip(bin_centers_norm, eps, 1.0 - eps)
+        
+        # 計算 Beta PDF 並轉化為 PMF (機率總和為 1)
+        pdf_vals = stats.beta.pdf(bin_centers_norm, alpha, beta_param)
+        pmf = pdf_vals / (np.sum(pdf_vals) + eps)
+        
+        return torch.tensor(pmf, dtype=torch.float32), float(mu)
+
+    def _get_resampler(self, original_sr):
+        if original_sr not in self.resampler_cache:
+            self.resampler_cache[original_sr] = T.Resample(orig_freq=original_sr, new_freq=self.target_sr)
+        return self.resampler_cache[original_sr]
+
+    def __len__(self):
+        return len(self.filenames)
+    
+    def __getitem__(self, idx):
+        item_data = self.data[idx]
+        filename_to_load = item_data['filename']
+        if self.is_eval_mode and not filename_to_load.lower().endswith('.wav'):
+            filename_to_load += ".wav"
+
+        wavpath = os.path.join(self.wavdir, filename_to_load)
+        wav = torch.zeros(1, self.max_samples) # Dummy
+
+        try:
+            loaded_wav, sr = torchaudio.load(wavpath)
+            if sr != self.target_sr:
+                resampler = self._get_resampler(sr)
+                loaded_wav = resampler(loaded_wav)
+            if loaded_wav.shape[0] > 1:
+                loaded_wav = torch.mean(loaded_wav, dim=0, keepdim=True)
+            
+            current_len = loaded_wav.shape[1]
+            if current_len > self.max_samples:
+                wav = loaded_wav[:, :self.max_samples]
+            elif current_len < self.max_samples:
+                padding_needed = self.max_samples - current_len
+                wav = torch.nn.functional.pad(loaded_wav, (0, padding_needed), 'constant', 0)
+            else:
+                wav = loaded_wav
+        except Exception as e:
+            logging.error(f"Error loading {wavpath}: {e}")
+
+        return wav, item_data['mean_quality'], item_data['mean_alignment'], filename_to_load, item_data['quality_pmf'], item_data['alignment_pmf']
+
+    @staticmethod
+    def collate_fn(batch):
+        wavs, mean_qualities, mean_alignments, filenames, quality_pmfs, alignment_pmfs = zip(*batch)
+        
+        max_len_in_batch = max(w.shape[1] for w in wavs)
+        output_wavs = []
+        for wav_item in wavs:
+            amount_to_pad = max_len_in_batch - wav_item.shape[1]
+            padded_wav = torch.nn.functional.pad(wav_item, (0, amount_to_pad), 'constant', 0) if amount_to_pad > 0 else wav_item
+            output_wavs.append(padded_wav)
+
+        wavs_tensor = torch.stack(output_wavs, dim=0)
+        mean_qualities_tensor = torch.tensor(mean_qualities, dtype=torch.float32)
+        mean_alignments_tensor = torch.tensor(mean_alignments, dtype=torch.float32)
+        quality_pmfs_tensor = torch.stack(quality_pmfs, dim=0)
+        alignment_pmfs_tensor = torch.stack(alignment_pmfs, dim=0)
+
+        return wavs_tensor, mean_qualities_tensor, mean_alignments_tensor, list(filenames), quality_pmfs_tensor, alignment_pmfs_tensor
 
 
 # --- Text Prompt Loading ---

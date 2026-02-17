@@ -22,7 +22,7 @@ from muq import MuQ
 # from torch.utils.data.dataset import Dataset # Not directly used if using custom datasets
 from torch.utils.data import DataLoader
 from utils import get_texts_from_filename, compute_metrics, systemID
-from dataset_mos import MosDataset, PersonMosDataset
+from dataset_mos import MosDataset, PersonMosDataset, BetaMosDataset
 from augment import mixup_data, scores_to_one_hot, scores_to_gaussian_target
 
 
@@ -151,7 +151,13 @@ def evaluate_model(model, dataloader, criterion_eval, args_eval, model_type_eval
 
     pbar_eval = tqdm(dataloader, desc="Evaluating", ncols=100, leave=False)
     for i, data in enumerate(pbar_eval):
-        if model_type_eval == 'muq_roberta_transformer_beta_pmf': # Or a more general check
+        if args_eval.dist_prediction_score_style == 'beta':
+            wavs, mean_scores_q_eval, mean_scores_a_eval, filenames, target_pmf_q_eval, target_pmf_a_eval = data
+            labels1_metric_target = mean_scores_q_eval.float().to(device_eval) 
+            labels2_metric_target = mean_scores_a_eval.float().to(device_eval)
+            labels1_loss_target = target_pmf_q_eval.float().to(device_eval)   # Beta PMF
+            labels2_loss_target = target_pmf_a_eval.float().to(device_eval)   # Beta PMF
+        elif model_type_eval == 'muq_roberta_transformer_beta_pmf': # Or a more general check
             wavs, mean_scores_q_eval, mean_scores_a_eval, filenames, target_pmf_q_eval, target_pmf_a_eval = data
             labels1_metric_target = mean_scores_q_eval.float().to(device_eval) # For PCC/SRCC/MSE
             labels2_metric_target = mean_scores_a_eval.float().to(device_eval)
@@ -210,7 +216,10 @@ def evaluate_model(model, dataloader, criterion_eval, args_eval, model_type_eval
                 current_pred_overall_dist = dist_output1.detach().cpu().numpy() # Store distribution
                 current_pred_textual_dist = dist_output2.detach().cpu().numpy() # Store distribution
                 
-                if model_type_eval == 'muq_roberta_annotator_dist':
+                if args_eval.dist_prediction_score_style == 'beta':
+                    target1_for_loss = labels1_loss_target
+                    target2_for_loss = labels2_loss_target
+                elif model_type_eval == 'muq_roberta_annotator_dist':
                     # labels1_loss_target IS the target distribution for annotator_dist
                     target1_for_loss = labels1_loss_target 
                     target2_for_loss = labels2_loss_target
@@ -348,7 +357,7 @@ def main() -> None: # Added type hint for clarity
     parser.add_argument('--num_epochs', type=int, default=100, help='Maximum number of training epochs.') # Adjusted default
     parser.add_argument('--patience', type=int, default=15, help='Early stopping patience.') # Adjusted default
     parser.add_argument('--optimizer', type=str, choices=['adamw', 'sgd'], default="sgd", help='Early stopping patience.')
-    parser.add_argument('--dist_prediction_score_style', type=str, choices=['one_hot', 'gaussian','coral'], default="one_hot", help='Early stopping patience.')
+    parser.add_argument('--dist_prediction_score_style', type=str, choices=['one_hot', 'gaussian','coral', 'beta'], default="one_hot", help='Early stopping patience.')
     parser.add_argument('--predict_only_ckpt_path', type=str, default=None, 
                         help='Path to a checkpoint for direct prediction. Skips training. Requires --test_list_path.')
     parser.add_argument('--predict_output_filename_base', type=str, default='answer', 
@@ -559,7 +568,11 @@ def main() -> None: # Added type hint for clarity
     testlist_path_from_arg = args.test_list_path # For final testing
     
 
-    if MODEL_TYPE == 'muq_roberta_transformer_beta_pmf':
+    if args.dist_prediction_score_style == 'beta':
+        trainset = BetaMosDataset(wavdir, trainlist_path_from_arg, num_bins=args.num_bins, target_sr=target_sr, max_duration_seconds=max_audio_seconds)
+        validset = BetaMosDataset(wavdir, validlist_path_from_arg, num_bins=args.num_bins, target_sr=target_sr, max_duration_seconds=max_audio_seconds)
+        testset = BetaMosDataset(wavdir, testlist_path_from_arg, num_bins=args.num_bins, target_sr=target_sr, max_duration_seconds=max_audio_seconds, is_eval_mode=True)
+    elif MODEL_TYPE == 'muq_roberta_transformer_beta_pmf':
         trainset = PersonMosDataset(wavdir, trainlist_path_from_arg, 
                                 target_sr=target_sr, max_duration_seconds=max_audio_seconds,
                                 num_ranks=args.num_ranks)
@@ -695,7 +708,13 @@ def main() -> None: # Added type hint for clarity
         all_train_labels1, all_train_preds1, all_train_labels2, all_train_preds2 = [], [], [], []
         pbar_train = tqdm(trainloader, desc=f"Epoch {epoch} Training", ncols=100, leave=False)
         for i, data in enumerate(pbar_train):
-            if MODEL_TYPE == 'muq_roberta_transformer_beta_pmf':
+            if args.dist_prediction_score_style == 'beta':
+                wavs, labels1_orig, labels2_orig, filenames, target1_dist_train, target2_dist_train = data
+                labels1_orig = labels1_orig.float().to(device)
+                labels2_orig = labels2_orig.float().to(device)
+                target1_dist_train = target1_dist_train.float().to(device)
+                target2_dist_train = target2_dist_train.float().to(device)
+            elif MODEL_TYPE == 'muq_roberta_transformer_beta_pmf':
                 wavs, mean_scores_q_orig, mean_scores_a_orig, filenames, target_pmf_q, target_pmf_a = data
                 labels1_orig = mean_scores_q_orig.float().to(device) # For MSE/SRCC metrics
                 labels2_orig = mean_scores_a_orig.float().to(device) # For MSE/SRCC metrics
@@ -782,7 +801,9 @@ def main() -> None: # Added type hint for clarity
                     if MODEL_TYPE != 'muq_roberta_transformer_beta_pmf': 
                         if MODEL_TYPE == 'muq_roberta_annotator_dist': target1_dist, target2_dist = labels1, labels2
                         else:
-                            if args.dist_prediction_score_style == 'one_hot':
+                            if args.dist_prediction_score_style == 'beta':
+                                target1_dist, target2_dist = target1_dist_train, target2_dist_train
+                            elif args.dist_prediction_score_style == 'one_hot':
                                 target1_dist, target2_dist = scores_to_one_hot(labels1, args.num_bins, device), scores_to_one_hot(labels2, args.num_bins, device)
                             elif args.dist_prediction_score_style == 'gaussian':
                                 target1_dist, target2_dist = scores_to_gaussian_target(labels1, args.num_bins, device), scores_to_gaussian_target(labels2, args.num_bins, device)

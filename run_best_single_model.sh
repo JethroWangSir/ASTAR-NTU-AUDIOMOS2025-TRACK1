@@ -3,7 +3,7 @@
 export CUDA_VISIBLE_DEVICES=0
 
 python train.py \
-    --expname primary_model_gaussian_listwise_mi_lambda_0.01_decoupled \
+    --expname primary_model_gaussian_listwise_mi_lambda_0.01_decoupled_contrastive_ta_lambda_0.1 \
     --model_type muq_roberta_transformer_dist \
     --datadir /share/nas169/jethrowang/MusicEval-full \
     --train_list_path /share/nas169/jethrowang/MusicEval-full/sets/train_mos_list.txt \

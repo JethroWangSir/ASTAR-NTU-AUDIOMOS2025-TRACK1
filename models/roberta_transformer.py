@@ -161,15 +161,71 @@ class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
         self.register_buffer('bin_centers', torch.linspace(1, 5, num_bins))
     
 
-    def forward(self, wavs, texts):
-        pooled_audio_features, fused_features = self.forward_features(
-            wavs, texts, use_decoupled_audio_for_cross_attn=True
+    # def forward(self, wavs, texts):
+    #     pooled_audio_features, fused_features = self.forward_features(
+    #         wavs, texts, use_decoupled_audio_for_cross_attn=True
+    #     )
+    #     overall_dist = self.overall_mlp(pooled_audio_features)
+    #     overall_expected = torch.sum(overall_dist * self.bin_centers, dim=1, keepdim=True)
+    #     # --- Coherence Prediction ---
+    #     coherence_dist = self.coherence_mlp(fused_features)
+    #     coherence_expected = torch.sum(coherence_dist * self.bin_centers, dim=1, keepdim=True)
+
+    #     return overall_dist, coherence_dist, overall_expected, coherence_expected
+    
+    # === [修改] Forward 現在會回傳 latent embeddings 用於 Contrastive Loss ===
+    def forward(self, wavs, texts, return_latents=False):
+        # 1. 提取特徵 (展開原本 BaseTransformerPredictor 的邏輯以獲取 text_seq_proj)
+        muq_output = self.muq(wavs, output_hidden_states=False)
+        audio_seq_embed = muq_output.last_hidden_state
+
+        text_inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt", max_length=128)
+        text_attention_mask = text_inputs['attention_mask'].to(wavs.device)
+        text_inputs_on_device = {k: v.to(wavs.device) for k, v in text_inputs.items()}
+        roberta_output = self.roberta(**text_inputs_on_device)
+        text_seq_embed = roberta_output.last_hidden_state
+        
+        # Audio Path
+        audio_padding_mask = None
+        audio_seq_embed_pe = self.audio_pos_encoder(audio_seq_embed)
+        audio_transformed = self.audio_transformer_encoder(src=audio_seq_embed_pe, src_key_padding_mask=audio_padding_mask)
+        pooled_audio_features = self.audio_attentive_pool(audio_transformed, mask=audio_padding_mask)
+
+        # Audio-Text Fusion (decoupled: audio_seq_embed, otherwise: audio_transformed)
+        audio_seq_proj = self.audio_seq_proj(audio_seq_embed)
+        text_seq_proj = self.text_seq_proj(text_seq_embed) # 我們需要這個做 Contrastive Loss
+        text_padding_mask = (text_attention_mask == 0)
+
+        cross_attended_output, _ = self.cross_attention(
+            query=text_seq_proj, key=audio_seq_proj, value=audio_seq_proj,
+            key_padding_mask=audio_padding_mask
         )
+        cross_attended_output_norm = self.cross_attention_norm(cross_attended_output)
+        fused_features = self.fused_attentive_pool(cross_attended_output_norm, mask=text_padding_mask)
+
+        # 2. 預測 heads
         overall_dist = self.overall_mlp(pooled_audio_features)
         overall_expected = torch.sum(overall_dist * self.bin_centers, dim=1, keepdim=True)
-        # --- Coherence Prediction ---
+
         coherence_dist = self.coherence_mlp(fused_features)
         coherence_expected = torch.sum(coherence_dist * self.bin_centers, dim=1, keepdim=True)
+
+        # 3. 如果需要回傳 Latents (用於訓練 Contrastive Loss)
+        if return_latents:
+            # 對 Text 進行 Mean Pooling 得到句子向量
+            # text_seq_proj: (B, T, D) -> (B, D)
+            # 使用 attention mask 避免 pool 到 padding
+            mask_expanded = text_attention_mask.unsqueeze(-1).expand(text_seq_proj.size()).float()
+            sum_embeddings = torch.sum(text_seq_proj * mask_expanded, 1)
+            sum_mask = mask_expanded.sum(1)
+            sum_mask = torch.clamp(sum_mask, min=1e-9)
+            pooled_text_features = sum_embeddings / sum_mask
+            
+            # 回傳: Audio Embed (用於 MI rank 雖然沒用到但可留著), Audio Embed (用於 CL), Text Embed (用於 CL)
+            # 注意：Contrastive 應該拉近 `pooled_audio_features` 和 `pooled_text_features`
+            # 或者拉近 `fused_features` 和 `pooled_text_features`? 
+            # 通常 InfoNCE 是用來對齊 unimodal encoders，所以用 pooled_audio 和 pooled_text。
+            return overall_dist, coherence_dist, overall_expected, coherence_expected, pooled_audio_features, pooled_text_features
 
         return overall_dist, coherence_dist, overall_expected, coherence_expected
 

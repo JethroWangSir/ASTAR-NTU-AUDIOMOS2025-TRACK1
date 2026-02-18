@@ -77,14 +77,16 @@ def systemID(wavID):
         return "unknown_system" # return a placeholder
 
 # === [新增] 計算一個 Batch 內所有樣本兩兩配對的 Pairwise Ranking Loss ===
-def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, device='cuda'):
+def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, tolerance=0.0, device='cuda'):
     """
-    計算一個 Batch 內所有樣本兩兩配對的 Ranking Loss。
+    計算一個 Batch 內所有樣本兩兩配對的 Ranking Loss，並加入容忍度 (Tolerance) 過濾機制。
     
     Args:
         pred_scores (Tensor): 模型預測的純量分數 (B, 1) 或 (B,)
         true_scores (Tensor): 真實的 MOS 分數 (B, 1) 或 (B,)
-        margin (float): MarginRankingLoss 的邊界值 (預設 0.0 或 0.1)
+        margin (float): MarginRankingLoss 的邊界值 (loss 函數本身的參數)
+        tolerance (float): 真實分數差異的容忍閾值。只有當 |true_i - true_j| > tolerance 時，
+                           才將該配對納入 Loss 計算。這有助於過濾 MOS 的標註雜訊。
         device (str): 運算設備
         
     Returns:
@@ -104,13 +106,20 @@ def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, device='
     # 1: i > j (i 比較好)
     # -1: i < j (j 比較好)
     # 0: i == j (分數相同)
+    # 注意：這裡只負責標記誰好誰壞，是否要計算 Loss 由 mask 決定
     targets = torch.sign(diff_true)
 
-    # 4. 建立遮罩 (Mask)
-    # 我們只關心分數「不同」的配對，忽略分數相同的 (targets=0) 以及自己比自己
-    mask = (targets != 0)
+    # === [修改核心] 4. 建立基於 Tolerance 的遮罩 (Mask) ===
+    # 計算真實分數的絕對差異
+    abs_diff = torch.abs(diff_true)
+    
+    # 舊邏輯: mask = (targets != 0)
+    # 新邏輯: 只有當真實分數差異大於 tolerance 時，才視為有效配對
+    # 例如: 若 tolerance=0.25, 則 3.5 vs 3.6 (差 0.1) 會被忽略，3.5 vs 4.0 (差 0.5) 會被保留
+    mask = (abs_diff > tolerance)
 
-    # 如果這個 Batch 裡大家分數都一樣 (極端情況)，直接回傳 0
+    # 如果這個 Batch 裡沒有任何配對滿足差異條件 (例如大家分數都很接近)，直接回傳 0
+    # 加上 requires_grad=True 確保 PyTorch 計算圖不斷裂 (雖然梯度是 0)
     if mask.sum() == 0:
         return torch.tensor(0.0, device=device, requires_grad=True)
 
@@ -120,12 +129,14 @@ def compute_pairwise_ranking_loss(pred_scores, true_scores, margin=0.0, device='
     pred_j = pred.unsqueeze(0).expand(batch_size, batch_size)
 
     # 6. 利用 Mask 篩選出有效的配對 (Flatten)
+    # 這裡只會選出那些「真實分數差距足夠大」的配對
     p_i_flat = pred_i[mask]
     p_j_flat = pred_j[mask]
     t_flat = targets[mask]
 
     # 7. 計算損失
     # Loss = max(0, -target * (input1 - input2) + margin)
+    # 這裡的 margin 是指預測分數之間需要拉開的距離，與 tolerance (真實分數篩選門檻) 不同
     loss = F.margin_ranking_loss(p_i_flat, p_j_flat, t_flat, margin=margin, reduction='mean')
     
     return loss

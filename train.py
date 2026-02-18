@@ -367,7 +367,7 @@ def main() -> None: # Added type hint for clarity
 
     # === [新增] 設定 Contrastive Loss 參數 ===
     parser.add_argument('--contrastive_lambda', type=float, default=0.0, help='Weight for contrastive loss (default: 0.0).')
-    parser.add_argument('--contrastive_temperature', type=float, default=0.1, help='Temperature for contrastive loss (default: 0.1).')
+    parser.add_argument('--contrastive_temperature', type=float, default=1.0, help='Temperature for contrastive loss (default: 1.0).')
 
     args = parser.parse_args()
 

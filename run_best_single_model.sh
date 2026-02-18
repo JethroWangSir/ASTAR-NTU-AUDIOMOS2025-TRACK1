@@ -17,7 +17,7 @@ python train.py \
     --num_bins 20 \
     --use_ranking_loss \
     --warmup_epochs 0 \
-    --ranking_loss_type listwise \
+    --ranking_loss_type pairwise \
     --rank_lambda 0.01 \
     --pairwise_margin 0.0 \
     --pairwise_tolerance 0.25 \

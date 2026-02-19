@@ -226,17 +226,17 @@ class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
             sum_embeddings = torch.sum(text_seq_proj * mask_expanded, 1)
             sum_mask = mask_expanded.sum(1)
             sum_mask = torch.clamp(sum_mask, min=1e-9)
-            pooled_text_features = sum_embeddings / sum_mask
+            pooled_contrastive_text_features = sum_embeddings / sum_mask
 
             # 使用 Contrastive 專屬的 Attentive Pooling 和 Projection Head
-            pooled_audio_features = self.audio_contrastive_attentive_pool(audio_seq_embed_raw, mask=audio_padding_mask)
-            audio_cl_embed = self.audio_contrastive_seq_proj(pooled_audio_features)
+            pooled_contrastive_audio_features = self.audio_contrastive_attentive_pool(audio_seq_embed_raw, mask=audio_padding_mask)
+            pooled_contrastive_audio_seq_proj = self.audio_contrastive_seq_proj(pooled_contrastive_audio_features)
             
             # 回傳：Audio Embed (用於 CL), Text Embed (用於 CL)
             # 注意：Contrastive 應該拉近 `pooled_audio_features` 和 `pooled_text_features`
             # 或者拉近 `fused_features` 和 `pooled_text_features`? 
             # 通常 InfoNCE 是用來對齊 unimodal encoders，所以用 pooled_audio 和 pooled_text。
-            return overall_dist, coherence_dist, overall_expected, coherence_expected, pooled_audio_features, pooled_text_features
+            return overall_dist, coherence_dist, overall_expected, coherence_expected, pooled_contrastive_audio_seq_proj, pooled_contrastive_text_features
 
         return overall_dist, coherence_dist, overall_expected, coherence_expected
 

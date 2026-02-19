@@ -21,7 +21,7 @@ import random
 from muq import MuQ
 # from torch.utils.data.dataset import Dataset # Not directly used if using custom datasets
 from torch.utils.data import DataLoader
-from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss
+from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss, compute_contrastive_loss
 from dataset_mos import MosDataset, PersonMosDataset
 from augment import mixup_data, scores_to_one_hot, scores_to_gaussian_target
 

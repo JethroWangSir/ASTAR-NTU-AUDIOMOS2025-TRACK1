@@ -113,7 +113,7 @@ class BaseTransformerPredictor(BasePredictor):
         self.fused_attentive_pool = AttentivePooling(input_dim=self.common_embed_dim)
 
         # === [新增] 專門給 Contrastive Loss 用的 Attentive Pooling 和 Projection Head ===
-        self.audio_contrastive_attentive_pool = AttentivePooling(input_dim=self.muq_output_dim)
+        self.audio_contrastive_attentive_pool = AttentivePooling(input_dim=self.common_embed_dim)
         # self.audio_contrastive_seq_proj = nn.Sequential(
         #     nn.Linear(self.muq_output_dim, self.common_embed_dim),
         #     nn.ReLU(),

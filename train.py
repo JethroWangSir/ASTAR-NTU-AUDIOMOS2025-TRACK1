@@ -359,8 +359,8 @@ def main() -> None: # Added type hint for clarity
 
     # === [新增] 選擇 Ranking Loss 種類與參數 ===
     parser.add_argument('--ranking_loss_type', type=str, choices=['pairwise', 'listwise'], default='pairwise', help='Type of ranking loss to use.')
-    parser.add_argument('--rank_lambda', type=float, default=0.0, help='Weight for ranking loss (default: 0.0).')
-    parser.add_argument('--warmup_epochs', type=int, default=0, help='The number of warmup epochs (default: 0).')
+    parser.add_argument('--ranking_lambda', type=float, default=0.0, help='Weight for ranking loss (default: 0.0).')
+    parser.add_argument('--ranking_warmup_epochs', type=int, default=0, help='The number of warmup epochs for ranking loss (default: 0).')
     parser.add_argument('--pairwise_margin', type=float, default=0.0, help='Margin for pairwise ranking loss (default: 0.0).')
     parser.add_argument('--pairwise_tolerance', type=float, default=0.0, help='Tolerance threshold for pairwise ranking loss (default: 0.0).')
     parser.add_argument('--listwise_temperature', type=float, default=1.0, help='Temperature for listwise ranking loss softmax (default: 1.0).')
@@ -816,13 +816,13 @@ def main() -> None: # Added type hint for clarity
                         kl_div_loss = kl_div_loss_overall + kl_div_loss_coherence
 
                         # === [新增] 根據參數選擇 Ranking Loss ===
-                        if args.rank_lambda > 0 and epoch > args.warmup_epochs:
+                        if args.ranking_lambda > 0 and epoch > args.ranking_warmup_epochs:
                             if args.ranking_loss_type == 'pairwise':
-                                rank_loss_overall = args.rank_lambda * compute_pairwise_ranking_loss(
+                                rank_loss_overall = args.ranking_lambda * compute_pairwise_ranking_loss(
                                     overall_score, labels1, margin=args.pairwise_margin, device=device
                                 )
                             elif args.ranking_loss_type == 'listwise':
-                                rank_loss_overall = args.rank_lambda * compute_listwise_ranking_loss(
+                                rank_loss_overall = args.ranking_lambda * compute_listwise_ranking_loss(
                                     overall_score, labels1, temperature=args.listwise_temperature, device=device
                                 )
                             else:
@@ -867,7 +867,7 @@ def main() -> None: # Added type hint for clarity
             pbar_train.set_postfix(loss=train_loss_iter.item())
 
             # === [新增] 記錄 1 個 epoch內 的 total KL Divergence Loss 和 Ranking Loss ===
-            if args.rank_lambda > 0 and epoch > args.warmup_epochs:
+            if args.ranking_lambda > 0 and epoch > args.ranking_warmup_epochs:
                 kl_div_loss_iter = kl_div_loss
                 ranking_loss_iter = ranking_loss
                 kl_div_epoch_loss += kl_div_loss_iter.item() * current_batch_size
@@ -878,7 +878,7 @@ def main() -> None: # Added type hint for clarity
         logging.info(f"Epoch {epoch} Train: Loss={avg_train_loss:.4f}, MSE_O={train_mse1_ep:.4f}, SRCC_O={train_srcc1_ep:.4f}")
 
         # === [新增] 記錄 1 個 epoch內 的 average KL Divergence Loss 和 Ranking Loss ===
-        if args.rank_lambda > 0 and epoch > args.warmup_epochs:
+        if args.ranking_lambda > 0 and epoch > args.ranking_warmup_epochs:
             avg_kl_div_loss = kl_div_epoch_loss / train_total_samples if train_total_samples > 0 else 0
             avg_ranking_loss = ranking_epoch_loss / train_total_samples if train_total_samples > 0 else 0
             logging.info(f"Epoch {epoch} KL Divergence Loss={avg_train_loss:.4f}, Ranking Loss={avg_ranking_loss:.4f}")

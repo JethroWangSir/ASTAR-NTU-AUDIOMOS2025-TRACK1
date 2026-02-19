@@ -16,8 +16,8 @@ python train.py \
     --dist_prediction_score_style gaussian \
     --num_bins 20 \
     --ranking_loss_type listwise \
-    --rank_lambda 0.01 \
-    --warmup_epochs 0 \
+    --ranking_lambda 0.01 \
+    --ranking_warmup_epochs 0 \
     --pairwise_margin 0.0 \
     --pairwise_tolerance 0.25 \
     --listwise_temperature 1.0 \

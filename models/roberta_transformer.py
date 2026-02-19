@@ -236,7 +236,7 @@ class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
             # 注意：Contrastive 應該拉近 `pooled_audio_features` 和 `pooled_text_features`
             # 或者拉近 `fused_features` 和 `pooled_text_features`? 
             # 通常 InfoNCE 是用來對齊 unimodal encoders，所以用 pooled_audio 和 pooled_text。
-            return overall_dist, coherence_dist, overall_expected, coherence_expected, pooled_contrastive_audio_seq_proj, pooled_contrastive_text_features
+            return overall_dist, coherence_dist, overall_expected, coherence_expected, pooled_contrastive_audio_features, pooled_contrastive_text_features
 
         return overall_dist, coherence_dist, overall_expected, coherence_expected
 

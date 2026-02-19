@@ -228,9 +228,8 @@ class MuQRoBERTaTransformerDistributionPredictor(BaseTransformerPredictor):
             sum_mask = torch.clamp(sum_mask, min=1e-9)
             pooled_contrastive_text_features = sum_embeddings / sum_mask
 
-            # 使用 Contrastive 專屬的 Attentive Pooling 和 Projection Head
+            # 使用 Contrastive 專屬的 Attentive Pooling
             pooled_contrastive_audio_features = self.audio_contrastive_attentive_pool(audio_seq_proj, mask=audio_padding_mask)
-            # pooled_contrastive_audio_seq_proj = self.audio_contrastive_seq_proj(pooled_contrastive_audio_features)
             
             # 回傳：Audio Embed (用於 CL), Text Embed (用於 CL)
             # 注意：Contrastive 應該拉近 `pooled_audio_features` 和 `pooled_text_features`

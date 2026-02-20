@@ -707,8 +707,8 @@ def main() -> None: # Added type hint for clarity
         net.train()
 
         # --- START OF COPIED/ADAPTED TRAINING EPOCH LOGIC ---
-        # === [修改] 初始化存 1 個 epoch 內的 total KL Divergence Loss 和 Ranking Loss 的變數 ===
-        train_epoch_loss, train_epoch_loss1, train_epoch_loss2, kl_div_epoch_loss, ranking_epoch_loss = 0.0, 0.0, 0.0, 0.0, 0.0
+        # === [修改] 初始化存 1 個 epoch 內的 total KL Divergence Loss、Ranking Loss 和 Contrastive Loss 的變數 ===
+        train_epoch_loss, train_epoch_loss1, train_epoch_loss2, kl_div_epoch_loss, ranking_epoch_loss, contrastive_epoch_loss = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         train_total_samples = 0
             
         all_train_labels1, all_train_preds1, all_train_labels2, all_train_preds2 = [], [], [], []
@@ -828,7 +828,6 @@ def main() -> None: # Added type hint for clarity
                             else:
                                 raise ValueError(f"Unknown ranking loss type: {args.ranking_loss_type}")
 
-                            ranking_loss = rank_loss_overall
                             loss1_train = kl_div_loss_overall + rank_loss_overall
                         else:
                             loss1_train = kl_div_loss_overall
@@ -837,7 +836,6 @@ def main() -> None: # Added type hint for clarity
                         if args.contrastive_lambda > 0 and 'audio_emb' in locals():
                             contrastive_loss_coherence = args.contrastive_lambda * compute_contrastive_loss(audio_emb, text_emb, 
                                                                         temperature=args.contrastive_temperature, device=device)
-                            contrastive_loss = contrastive_loss_coherence
                             loss2_train = kl_div_loss_coherence + contrastive_loss_coherence
                         else:
                             loss2_train = kl_div_loss_coherence
@@ -866,22 +864,23 @@ def main() -> None: # Added type hint for clarity
             train_epoch_loss += train_loss_iter.item() * current_batch_size
             pbar_train.set_postfix(loss=train_loss_iter.item())
 
-            # === [新增] 記錄 1 個 epoch內 的 total KL Divergence Loss 和 Ranking Loss ===
-            if args.ranking_lambda > 0 and epoch > args.ranking_warmup_epochs:
-                kl_div_loss_iter = kl_div_loss
-                ranking_loss_iter = ranking_loss
-                kl_div_epoch_loss += kl_div_loss_iter.item() * current_batch_size
-                ranking_epoch_loss += ranking_loss_iter.item() * current_batch_size
+            # === [新增] 記錄 1 個 epoch 內 的 total KL Divergence Loss、Ranking Loss 和 Contrastive Loss ===
+            kl_div_loss_iter = kl_div_loss
+            ranking_loss_iter = rank_loss_overall
+            contrastive_loss_iter = contrastive_loss_coherence
+            kl_div_epoch_loss += kl_div_loss_iter.item() * current_batch_size
+            ranking_epoch_loss += ranking_loss_iter.item() * current_batch_size
+            contrastive_epoch_loss += contrastive_loss_iter.item() * current_batch_size
         
         avg_train_loss = train_epoch_loss / train_total_samples if train_total_samples > 0 else 0
         train_mse1_ep, _, train_srcc1_ep, _ = compute_metrics(np.array(all_train_labels1), np.array(all_train_preds1))
         logging.info(f"Epoch {epoch} Train: Loss={avg_train_loss:.4f}, MSE_O={train_mse1_ep:.4f}, SRCC_O={train_srcc1_ep:.4f}")
 
-        # === [新增] 記錄 1 個 epoch內 的 average KL Divergence Loss 和 Ranking Loss ===
-        if args.ranking_lambda > 0 and epoch > args.ranking_warmup_epochs:
-            avg_kl_div_loss = kl_div_epoch_loss / train_total_samples if train_total_samples > 0 else 0
-            avg_ranking_loss = ranking_epoch_loss / train_total_samples if train_total_samples > 0 else 0
-            logging.info(f"Epoch {epoch} KL Divergence Loss={avg_train_loss:.4f}, Ranking Loss={avg_ranking_loss:.4f}")
+        # === [新增] 記錄 1 個 epoch 內 的 average KL Divergence Loss、Ranking Loss 和 Contrastive Loss ===
+        avg_kl_div_loss = kl_div_epoch_loss / train_total_samples if train_total_samples > 0 else 0
+        avg_ranking_loss = ranking_epoch_loss / train_total_samples if train_total_samples > 0 else 0
+        avg_contrastive_loss = contrastive_epoch_loss / train_total_samples if train_total_samples > 0 else 0
+        logging.info(f"Epoch {epoch} KL Divergence Loss={avg_train_loss:.4f}, Ranking Loss={avg_ranking_loss:.4f}, Contrastive Loss={avg_contrastive_loss:.4f}")
 
         writer.add_scalar('Train/Loss_epoch', avg_train_loss, epoch)
         writer.add_scalar('Train/MSE_overall_epoch', train_mse1_ep, epoch)

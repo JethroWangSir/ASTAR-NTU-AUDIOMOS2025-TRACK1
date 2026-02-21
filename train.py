@@ -21,7 +21,7 @@ import random
 from muq import MuQ
 # from torch.utils.data.dataset import Dataset # Not directly used if using custom datasets
 from torch.utils.data import DataLoader
-from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss, compute_contrastive_loss
+from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss, compute_contrastive_loss, compute_quality_aware_alignment_loss
 from dataset_mos import MosDataset, PersonMosDataset
 from augment import mixup_data, scores_to_one_hot, scores_to_gaussian_target
 
@@ -837,6 +837,10 @@ def main() -> None: # Added type hint for clarity
                             contrastive_loss_coherence = args.contrastive_lambda * compute_contrastive_loss(audio_emb, text_emb, 
                                                                         temperature=args.contrastive_temperature, device=device)
                             loss2_train = kl_div_loss_coherence + contrastive_loss_coherence
+                        # === [新增] Quality-Aware Alignment Loss ===
+                            # 注意：這裡把 labels2 (TA 真實分數) 傳進去了
+                            loss_alignment = args.contrastive_lambda * compute_quality_aware_alignment_loss(audio_emb, text_emb,
+                                                                                                        labels2, device=device)
                         else:
                             loss2_train = kl_div_loss_coherence
 

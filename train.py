@@ -834,13 +834,13 @@ def main() -> None: # Added type hint for clarity
                         
                         # === [新增] Contrastive Loss ===
                         if args.contrastive_lambda > 0 and 'audio_emb' in locals():
-                            contrastive_loss_coherence = args.contrastive_lambda * compute_contrastive_loss(audio_emb, text_emb, 
-                                                                        temperature=args.contrastive_temperature, device=device)
-                            loss2_train = kl_div_loss_coherence + contrastive_loss_coherence
-                        # === [新增] Quality-Aware Alignment Loss ===
+                            # contrastive_loss_coherence = args.contrastive_lambda * compute_contrastive_loss(audio_emb, text_emb, 
+                            #                                             temperature=args.contrastive_temperature, device=device)
+                            # === [新增] Quality-Aware Alignment Loss ===
                             # 注意：這裡把 labels2 (TA 真實分數) 傳進去了
-                            loss_alignment = args.contrastive_lambda * compute_quality_aware_alignment_loss(audio_emb, text_emb,
+                            contrastive_loss_coherence = args.contrastive_lambda * compute_quality_aware_alignment_loss(audio_emb, text_emb,
                                                                                                         labels2, device=device)
+                            loss2_train = kl_div_loss_coherence + contrastive_loss_coherence
                         else:
                             loss2_train = kl_div_loss_coherence
 

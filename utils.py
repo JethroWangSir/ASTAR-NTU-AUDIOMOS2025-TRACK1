@@ -209,7 +209,8 @@ def compute_contrastive_loss(audio_features, text_features, temperature=0.1, dev
     
     return (loss_a2t + loss_t2a) / 2
 
-def compute_quality_aware_alignment_loss(audio_features, text_features, ta_scores, device='cuda'):
+# === [新增] Score-Guided Alignment Loss ===
+def compute_score_guided_alignment_loss(audio_features, text_features, ta_scores, device='cuda'):
     """
     Score-Guided Alignment Loss: 
     讓 Audio 和 Text 的 Cosine 相似度，直接擬合真實的 TA MOS 分數。
@@ -221,6 +222,7 @@ def compute_quality_aware_alignment_loss(audio_features, text_features, ta_score
     # 2. 計算 Pair-wise 的 Cosine Similarity (形狀: B)
     # 不算矩陣乘法，只算對角線 (i vs i)
     sim = torch.sum(audio_norm * text_norm, dim=1)
+    sim_normalized = (sim + 1.0) / 2.0  # 將 [-1, 1] 映射到 [0, 1]
     
     # 3. 將 TA MOS 分數 (1~5) 映射到目標相似度 (0~1)
     # 公式: (score - min) / (max - min)
@@ -228,6 +230,6 @@ def compute_quality_aware_alignment_loss(audio_features, text_features, ta_score
     target_sim = (ta_scores - 1.0) / 4.0 
     
     # 4. 計算 MSE Loss (讓相似度逼近人類評分)
-    loss = F.mse_loss(sim, target_sim)
+    loss = F.mse_loss(sim_normalized, target_sim)
     
     return loss

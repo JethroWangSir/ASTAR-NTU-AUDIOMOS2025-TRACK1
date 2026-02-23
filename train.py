@@ -21,7 +21,7 @@ import random
 from muq import MuQ
 # from torch.utils.data.dataset import Dataset # Not directly used if using custom datasets
 from torch.utils.data import DataLoader
-from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss, compute_contrastive_loss, compute_quality_aware_alignment_loss
+from utils import get_texts_from_filename, compute_metrics, systemID, compute_pairwise_ranking_loss, compute_listwise_ranking_loss, compute_contrastive_loss, compute_score_guided_alignment_loss
 from dataset_mos import MosDataset, PersonMosDataset
 from augment import mixup_data, scores_to_one_hot, scores_to_gaussian_target
 
@@ -365,9 +365,9 @@ def main() -> None: # Added type hint for clarity
     parser.add_argument('--pairwise_tolerance', type=float, default=0.0, help='Tolerance threshold for pairwise ranking loss (default: 0.0).')
     parser.add_argument('--listwise_temperature', type=float, default=1.0, help='Temperature for listwise ranking loss softmax (default: 1.0).')
 
-    # === [新增] 設定 Contrastive Loss 參數 ===
-    parser.add_argument('--contrastive_lambda', type=float, default=0.0, help='Weight for contrastive loss (default: 0.0).')
-    parser.add_argument('--contrastive_temperature', type=float, default=1.0, help='Temperature for contrastive loss (default: 1.0).')
+    # === [新增] 設定 Alignment Loss 參數 ===
+    parser.add_argument('--alignment_lambda', type=float, default=0.0, help='Weight for alignment loss (default: 0.0).')
+    parser.add_argument('--alignment_temperature', type=float, default=1.0, help='Temperature for alignment loss (default: 1.0).')
 
     args = parser.parse_args()
 
@@ -707,8 +707,8 @@ def main() -> None: # Added type hint for clarity
         net.train()
 
         # --- START OF COPIED/ADAPTED TRAINING EPOCH LOGIC ---
-        # === [修改] 初始化存 1 個 epoch 內的 total KL Divergence Loss、Ranking Loss 和 Contrastive Loss 的變數 ===
-        train_epoch_loss, train_epoch_loss1, train_epoch_loss2, kl_div_epoch_loss, ranking_epoch_loss, contrastive_epoch_loss = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        # === [修改] 初始化存 1 個 epoch 內的 total KL Divergence Loss、Ranking Loss 和 Alignment Loss 的變數 ===
+        train_epoch_loss, train_epoch_loss1, train_epoch_loss2, kl_div_epoch_loss, ranking_epoch_loss, alignment_epoch_loss = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         train_total_samples = 0
             
         all_train_labels1, all_train_preds1, all_train_labels2, all_train_preds2 = [], [], [], []
@@ -782,8 +782,8 @@ def main() -> None: # Added type hint for clarity
                     loss2_train = criterion(torch.log(pred_pmf_a + 1e-10), target_pmf_a)
                     
                 else:
-                    # === [修改] 需要 latents 來算 Contrastive Loss ===
-                    if args.contrastive_lambda > 0 and MODEL_TYPE == 'muq_roberta_transformer_dist':
+                    # === [修改] 需要 latents 來算 Alignment Loss ===
+                    if args.alignment_lambda > 0 and MODEL_TYPE == 'muq_roberta_transformer_dist':
                         # 呼叫修改後的 forward，取得 latents
                         overall_dist_pred, coherence_dist_pred, overall_score, coherence_score, audio_emb, text_emb = net(input_to_model, texts, return_latents=True)
                     else:
@@ -832,15 +832,15 @@ def main() -> None: # Added type hint for clarity
                         else:
                             loss1_train = kl_div_loss_overall
                         
-                        # === [新增] Contrastive Loss ===
-                        if args.contrastive_lambda > 0 and 'audio_emb' in locals():
-                            # contrastive_loss_coherence = args.contrastive_lambda * compute_contrastive_loss(audio_emb, text_emb, 
-                            #                                             temperature=args.contrastive_temperature, device=device)
+                        # === [新增] Alignment Loss ===
+                        if args.alignment_lambda > 0 and 'audio_emb' in locals():
+                            # alignment_loss_coherence = args.alignment_lambda * compute_contrastive_loss(audio_emb, text_emb, 
+                            #                                             temperature=args.alignment_temperature, device=device)
                             # === [新增] Quality-Aware Alignment Loss ===
                             # 注意：這裡把 labels2 (TA 真實分數) 傳進去了
-                            contrastive_loss_coherence = args.contrastive_lambda * compute_quality_aware_alignment_loss(audio_emb, text_emb,
+                            alignment_loss_coherence = args.alignment_lambda * compute_score_guided_alignment_loss(audio_emb, text_emb,
                                                                                                         labels2, device=device)
-                            loss2_train = kl_div_loss_coherence + contrastive_loss_coherence
+                            loss2_train = kl_div_loss_coherence + alignment_loss_coherence
                         else:
                             loss2_train = kl_div_loss_coherence
 
@@ -868,23 +868,23 @@ def main() -> None: # Added type hint for clarity
             train_epoch_loss += train_loss_iter.item() * current_batch_size
             pbar_train.set_postfix(loss=train_loss_iter.item())
 
-            # === [新增] 記錄 1 個 epoch 內 的 total KL Divergence Loss、Ranking Loss 和 Contrastive Loss ===
+            # === [新增] 記錄 1 個 epoch 內 的 total KL Divergence Loss、Ranking Loss 和 Alignment Loss ===
             kl_div_loss_iter = kl_div_loss
             ranking_loss_iter = rank_loss_overall
-            contrastive_loss_iter = contrastive_loss_coherence
+            alignment_loss_iter = alignment_loss_coherence
             kl_div_epoch_loss += kl_div_loss_iter.item() * current_batch_size
             ranking_epoch_loss += ranking_loss_iter.item() * current_batch_size
-            contrastive_epoch_loss += contrastive_loss_iter.item() * current_batch_size
+            alignment_epoch_loss += alignment_loss_iter.item() * current_batch_size
         
         avg_train_loss = train_epoch_loss / train_total_samples if train_total_samples > 0 else 0
         train_mse1_ep, _, train_srcc1_ep, _ = compute_metrics(np.array(all_train_labels1), np.array(all_train_preds1))
         logging.info(f"Epoch {epoch} Train: Loss={avg_train_loss:.4f}, MSE_O={train_mse1_ep:.4f}, SRCC_O={train_srcc1_ep:.4f}")
 
-        # === [新增] 記錄 1 個 epoch 內 的 average KL Divergence Loss、Ranking Loss 和 Contrastive Loss ===
+        # === [新增] 記錄 1 個 epoch 內 的 average KL Divergence Loss、Ranking Loss 和 Alignment Loss ===
         avg_kl_div_loss = kl_div_epoch_loss / train_total_samples if train_total_samples > 0 else 0
         avg_ranking_loss = ranking_epoch_loss / train_total_samples if train_total_samples > 0 else 0
-        avg_contrastive_loss = contrastive_epoch_loss / train_total_samples if train_total_samples > 0 else 0
-        logging.info(f"Epoch {epoch} KL Divergence Loss={avg_train_loss:.4f}, Ranking Loss={avg_ranking_loss:.4f}, Contrastive Loss={avg_contrastive_loss:.4f}")
+        avg_alignment_loss = alignment_epoch_loss / train_total_samples if train_total_samples > 0 else 0
+        logging.info(f"Epoch {epoch} KL Divergence Loss={avg_train_loss:.4f}, Ranking Loss={avg_ranking_loss:.4f}, Alignment Loss={avg_alignment_loss:.4f}")
 
         writer.add_scalar('Train/Loss_epoch', avg_train_loss, epoch)
         writer.add_scalar('Train/MSE_overall_epoch', train_mse1_ep, epoch)

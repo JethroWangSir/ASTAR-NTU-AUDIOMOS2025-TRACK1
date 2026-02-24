@@ -367,7 +367,6 @@ def main() -> None: # Added type hint for clarity
 
     # === [新增] 設定 Alignment Loss 參數 ===
     parser.add_argument('--alignment_lambda', type=float, default=0.0, help='Weight for alignment loss (default: 0.0).')
-    parser.add_argument('--alignment_temperature', type=float, default=1.0, help='Temperature for alignment loss (default: 1.0).')
 
     args = parser.parse_args()
 
@@ -834,9 +833,6 @@ def main() -> None: # Added type hint for clarity
                         
                         # === [新增] Alignment Loss ===
                         if args.alignment_lambda > 0 and 'audio_emb' in locals():
-                            # alignment_loss_coherence = args.alignment_lambda * compute_contrastive_loss(audio_emb, text_emb, 
-                            #                                             temperature=args.alignment_temperature, device=device)
-                            # === [新增] Quality-Aware Alignment Loss ===
                             # 注意：這裡把 labels2 (TA 真實分數) 傳進去了
                             alignment_loss_coherence = args.alignment_lambda * compute_score_guided_alignment_loss(audio_emb, text_emb,
                                                                                                         labels2, device=device)

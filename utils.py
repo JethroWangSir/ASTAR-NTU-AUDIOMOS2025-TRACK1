@@ -222,9 +222,6 @@ def compute_score_guided_alignment_loss(audio_features, text_features, ta_scores
     # 2. 計算 Pair-wise 的 Cosine Similarity (形狀: B)
     # 不算矩陣乘法，只算對角線 (i vs i)
     sim = torch.sum(audio_norm * text_norm, dim=1)
-
-    # 將 [-1, 1] 映射到 [0, 1]
-    # sim_normalized = (sim + 1.0) / 2.0
     
     # 3. 將 TA MOS 分數 (1~5) 映射到目標相似度 (0~1)
     # 公式: (score - min) / (max - min)
@@ -232,9 +229,6 @@ def compute_score_guided_alignment_loss(audio_features, text_features, ta_scores
     target_sim = (ta_scores - 1.0) / 4.0 
     
     # 4. 計算 MSE Loss (讓相似度逼近人類評分)
-    # loss = F.mse_loss(sim_normalized, target_sim)
-    
-    # # beta=0.1 表示誤差小於 0.1 (對應 MOS 的 0.4 分) 時，幾乎不懲罰
-    loss = F.smooth_l1_loss(sim, target_sim, beta=0.1)
-    
+    loss = F.mse_loss(sim, target_sim)
+        
     return loss

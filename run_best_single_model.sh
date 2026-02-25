@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=3
 
 python train.py \
     --expname primary_model_gaussian_listwise_mi_lambda_0.01_decoupled_alignment_huber_ta_lambda_0.2 \

@@ -815,7 +815,7 @@ def main() -> None: # Added type hint for clarity
                         kl_div_loss = kl_div_loss_overall + kl_div_loss_coherence
 
                         # === [新增] 根據參數選擇 Ranking Loss ===
-                        if args.ranking_lambda > 0 and epoch > args.ranking_warmup_epochs:
+                        if args.ranking_lambda > 0.0 and epoch > args.ranking_warmup_epochs:
                             if args.ranking_loss_type == 'pairwise':
                                 rank_loss_overall = args.ranking_lambda * compute_pairwise_ranking_loss(
                                     overall_score, labels1, margin=args.pairwise_margin, device=device
@@ -830,15 +830,17 @@ def main() -> None: # Added type hint for clarity
                             loss1_train = kl_div_loss_overall + rank_loss_overall
                         else:
                             loss1_train = kl_div_loss_overall
+                            rank_loss_overall = torch.tensor([0.0])
                         
                         # === [新增] Alignment Loss ===
-                        if args.alignment_lambda > 0 and 'audio_emb' in locals():
+                        if args.alignment_lambda > 0.0 and 'audio_emb' in locals():
                             # 注意：這裡把 labels2 (TA 真實分數) 傳進去了
                             alignment_loss_coherence = args.alignment_lambda * compute_score_guided_alignment_loss(audio_emb, text_emb,
                                                                                                         labels2, device=device)
                             loss2_train = kl_div_loss_coherence + alignment_loss_coherence
                         else:
                             loss2_train = kl_div_loss_coherence
+                            alignment_loss_coherence = torch.tensor([0.0])
 
             else:
                 output1, output2 = net(input_to_model, texts)
